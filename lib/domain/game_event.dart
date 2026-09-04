@@ -34,6 +34,12 @@ class PlayerMoved extends GameEvent {
   final String toSquareId;
 }
 
+class SquarePassed extends GameEvent {
+  const SquarePassed(this.squareId);
+
+  final String squareId;
+}
+
 class SquareActivated extends GameEvent {
   const SquareActivated(this.squareId);
 

@@ -1,6 +1,6 @@
 enum SquareKind { start, normal, goal }
 
-enum EffectTrigger { onLand }
+enum EffectTrigger { onLand, onPass }
 
 enum EffectActionType {
   moveBy,
@@ -8,6 +8,7 @@ enum EffectActionType {
   skipTurn,
   rollAgain,
   warpTo,
+  showMessage,
 }
 
 class BoardPosition {

@@ -119,6 +119,22 @@ class GameEngine {
       routeHistory = <String>[currentSquareId];
     }
 
+    void emitPassMessageEffects(BoardSquare square) {
+      final passMessages = square.effects
+          .where(
+            (effect) =>
+                effect.trigger == EffectTrigger.onPass &&
+                effect.actionType == EffectActionType.showMessage,
+          )
+          .toList(growable: false);
+      if (passMessages.isEmpty) return;
+
+      events.add(SquarePassed(square.id));
+      for (final effect in passMessages) {
+        events.add(SquareEffectApplied(squareId: square.id, effect: effect));
+      }
+    }
+
     Future<void> moveForward(int steps) async {
       for (var step = 0; step < steps; step++) {
         final from = board.squareById(currentSquareId);
@@ -162,6 +178,11 @@ class GameEngine {
         );
         currentSquareId = next.id;
         routeHistory.add(next.id);
+
+        final willContinue = step < steps - 1 && next.kind != SquareKind.goal;
+        if (willContinue) {
+          emitPassMessageEffects(next);
+        }
         if (next.kind == SquareKind.goal) return;
       }
     }
@@ -263,6 +284,8 @@ class GameEngine {
             if (targetSquareId is String) {
               moveDirectlyTo(targetSquareId, resetHistory: false);
             }
+          case EffectActionType.showMessage:
+            break;
         }
       }
 

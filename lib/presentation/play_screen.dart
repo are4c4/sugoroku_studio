@@ -79,6 +79,8 @@ class _PlayScreenState extends State<PlayScreen> {
           return '${actingPlayer.name}: ${effectDescription(appliedEffect.effect)}！';
         case EffectActionType.rollAgain:
           return '${actingPlayer.name}はもう一度サイコロを振れます！';
+        case EffectActionType.showMessage:
+          break;
       }
     }
     return '次は${result.state.currentPlayer.name}のターンです';
@@ -244,6 +246,12 @@ class _PlayScreenState extends State<PlayScreen> {
         continue;
       }
 
+      if (event is SquarePassed) {
+        setState(() => _activatedSquareId = event.squareId);
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        continue;
+      }
+
       if (event is SquareActivated) {
         setState(() => _activatedSquareId = event.squareId);
         await Future<void>.delayed(const Duration(milliseconds: 160));
@@ -251,9 +259,12 @@ class _PlayScreenState extends State<PlayScreen> {
       }
 
       if (event is SquareEffectApplied) {
+        final message = effectMessage(event.effect);
         await _showEffect(
           event.squareId,
-          '✨ ${effectDescription(event.effect)}',
+          event.effect.actionType == EffectActionType.showMessage
+              ? '💬 ${message.isEmpty ? 'メッセージ' : message}'
+              : '✨ ${effectDescription(event.effect)}',
         );
         continue;
       }
@@ -345,6 +356,8 @@ class _PlayScreenState extends State<PlayScreen> {
         return Colors.lime.shade300;
       case EffectActionType.warpTo:
         return Colors.indigo.shade200;
+      case EffectActionType.showMessage:
+        return Colors.cyan.shade200;
     }
   }
 
