@@ -87,7 +87,51 @@ const secondHuman = Player(
   currentSquareId: '',
 );
 
+const cpu = Player(
+  id: 'cpu-1',
+  name: 'CPU 1',
+  type: PlayerType.cpu,
+  currentSquareId: '',
+);
+
 void main() {
+  test('createGame initializes every player at start', () {
+    final engine = GameEngine(random: FixedRandom(0));
+    final initial = engine.createGame(
+      board: createBoard(),
+      players: const [human, cpu, secondHuman],
+    );
+
+    expect(initial.players.map((player) => player.currentSquareId), [
+      'start',
+      'start',
+      'start',
+    ]);
+    expect(initial.currentPlayerIndex, 0);
+  });
+
+  test('multiple players rotate in configured order', () {
+    final engine = GameEngine(random: FixedRandom(0));
+    final initial = engine.createGame(
+      board: createBoard(),
+      players: const [human, cpu, secondHuman],
+    );
+
+    final first = engine.rollCurrentPlayer(initial);
+    expect(first.state.players[0].currentSquareId, 'one');
+    expect(first.state.currentPlayerIndex, 1);
+    expect(first.state.currentPlayer.type, PlayerType.cpu);
+
+    final second = engine.rollCurrentPlayer(first.state);
+    expect(second.state.players[1].currentSquareId, 'one');
+    expect(second.state.currentPlayerIndex, 2);
+
+    final third = engine.rollCurrentPlayer(second.state);
+    expect(third.state.players[2].currentSquareId, 'one');
+    expect(third.state.currentPlayerIndex, 0);
+    expect(third.state.turn, 4);
+  });
+
   test('roll moves one square at a time and clamps at goal', () {
     final engine = GameEngine(random: FixedRandom(5));
     final initial = engine.createGame(
