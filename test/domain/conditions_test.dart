@@ -45,6 +45,14 @@ Player playerWithPoints(int points) => Player(
       points: points,
     );
 
+Player playerWithInventory(Map<String, int> inventory) => Player(
+      id: 'player',
+      name: 'Player',
+      type: PlayerType.human,
+      currentSquareId: '',
+      inventory: inventory,
+    );
+
 void main() {
   test('pointsAtLeast includes the threshold and skips below it', () async {
     const effect = SquareEffect(
@@ -139,14 +147,107 @@ void main() {
     expect(changes.map((event) => event.points), [5, 12]);
   });
 
-  test('JSON round-trip preserves optional conditions', () {
-    const conditionalEffect = SquareEffect(
+  test('hasItem fires only when the named item is owned', () async {
+    const effect = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.changePoints,
+      parameters: {'points': 4},
+      condition: EffectCondition(
+        type: EffectConditionType.hasItem,
+        parameters: {'itemName': 'Key'},
+      ),
+    );
+    final engine = GameEngine();
+
+    final missing = engine.createGame(
+      board: createConditionalBoard(const [effect]),
+      players: [playerWithInventory(const {})],
+    );
+    final missingResult = await engine.rollCurrentPlayer(missing, dice: 1);
+    expect(missingResult.state.currentPlayer.points, 0);
+    expect(missingResult.events.whereType<PlayerPointsChanged>(), isEmpty);
+
+    final owned = engine.createGame(
+      board: createConditionalBoard(const [effect]),
+      players: [playerWithInventory(const {'Key': 1})],
+    );
+    final ownedResult = await engine.rollCurrentPlayer(owned, dice: 1);
+    expect(ownedResult.state.currentPlayer.points, 4);
+  });
+
+  test('itemQuantityAtLeast includes the threshold and skips below it', () async {
+    const effect = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.showMessage,
+      parameters: {'message': 'three keys'},
+      condition: EffectCondition(
+        type: EffectConditionType.itemQuantityAtLeast,
+        parameters: {'itemName': 'Key', 'quantity': 3},
+      ),
+    );
+    final engine = GameEngine();
+
+    final below = engine.createGame(
+      board: createConditionalBoard(const [effect]),
+      players: [playerWithInventory(const {'Key': 2})],
+    );
+    final belowResult = await engine.rollCurrentPlayer(below, dice: 1);
+    expect(belowResult.events.whereType<SquareEffectApplied>(), isEmpty);
+
+    final threshold = engine.createGame(
+      board: createConditionalBoard(const [effect]),
+      players: [playerWithInventory(const {'Key': 3})],
+    );
+    final thresholdResult = await engine.rollCurrentPlayer(threshold, dice: 1);
+    expect(thresholdResult.events.whereType<SquareEffectApplied>(), hasLength(1));
+  });
+
+  test('later item conditions see items granted by earlier actions', () async {
+    const grant = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.grantItem,
+      parameters: {'itemName': 'Key', 'quantity': 1},
+    );
+    const conditionalGain = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.changePoints,
+      parameters: {'points': 9},
+      condition: EffectCondition(
+        type: EffectConditionType.hasItem,
+        parameters: {'itemName': 'Key'},
+      ),
+    );
+    final engine = GameEngine();
+    final state = engine.createGame(
+      board: createConditionalBoard(const [grant, conditionalGain]),
+      players: [playerWithInventory(const {})],
+    );
+
+    final result = await engine.rollCurrentPlayer(state, dice: 1);
+
+    expect(result.state.currentPlayer.itemQuantity('Key'), 1);
+    expect(result.state.currentPlayer.points, 9);
+    expect(result.events.whereType<PlayerItemGranted>(), hasLength(1));
+    expect(result.events.whereType<PlayerPointsChanged>(), hasLength(1));
+  });
+
+  test('JSON round-trip preserves optional and item conditions', () {
+    const pointCondition = SquareEffect(
       trigger: EffectTrigger.onLand,
       actionType: EffectActionType.showMessage,
       parameters: {'message': 'qualified'},
       condition: EffectCondition(
         type: EffectConditionType.pointsAtLeast,
         parameters: {'points': 15},
+      ),
+    );
+    const itemCondition = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.showMessage,
+      parameters: {'message': 'keys'},
+      condition: EffectCondition(
+        type: EffectConditionType.itemQuantityAtLeast,
+        parameters: {'itemName': 'Key', 'quantity': 2},
       ),
     );
     const unconditionalEffect = SquareEffect(
@@ -157,13 +258,19 @@ void main() {
 
     final restored = Board.fromJson(
       createConditionalBoard(
-        const [conditionalEffect, unconditionalEffect],
+        const [pointCondition, itemCondition, unconditionalEffect],
       ).toJson(),
     );
     final effects = restored.squareById('event')!.effects;
 
     expect(effects[0].condition?.type, EffectConditionType.pointsAtLeast);
     expect(effects[0].condition?.parameters['points'], 15);
-    expect(effects[1].condition, isNull);
+    expect(
+      effects[1].condition?.type,
+      EffectConditionType.itemQuantityAtLeast,
+    );
+    expect(effects[1].condition?.parameters['itemName'], 'Key');
+    expect(effects[1].condition?.parameters['quantity'], 2);
+    expect(effects[2].condition, isNull);
   });
 }
