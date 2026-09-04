@@ -170,43 +170,89 @@ class Board {
     );
   }
 
-  List<BoardSquare> orderedPath() {
-    BoardSquare? start;
+  BoardSquare? get startSquare {
     for (final square in squares) {
-      if (square.kind == SquareKind.start) {
-        start = square;
-        break;
+      if (square.kind == SquareKind.start) return square;
+    }
+    return null;
+  }
+
+  BoardSquare? squareById(String id) {
+    for (final square in squares) {
+      if (square.id == id) return square;
+    }
+    return null;
+  }
+
+  List<BoardSquare> outgoingSquares(String squareId) {
+    final result = <BoardSquare>[];
+    for (final connection in connections) {
+      if (connection.fromSquareId != squareId) continue;
+      final target = squareById(connection.toSquareId);
+      if (target != null && !result.any((item) => item.id == target.id)) {
+        result.add(target);
       }
     }
-    if (start == null) return const <BoardSquare>[];
+    return List<BoardSquare>.unmodifiable(result);
+  }
 
-    final squaresById = <String, BoardSquare>{
-      for (final square in squares) square.id: square,
-    };
-    final nextById = <String, String>{};
+  List<BoardSquare> incomingSquares(String squareId) {
+    final result = <BoardSquare>[];
     for (final connection in connections) {
-      nextById.putIfAbsent(
-        connection.fromSquareId,
-        () => connection.toSquareId,
-      );
+      if (connection.toSquareId != squareId) continue;
+      final source = squareById(connection.fromSquareId);
+      if (source != null && !result.any((item) => item.id == source.id)) {
+        result.add(source);
+      }
     }
+    return List<BoardSquare>.unmodifiable(result);
+  }
+
+  int? shortestDistanceToGoal(String fromSquareId) {
+    final start = squareById(fromSquareId);
+    if (start == null) return null;
+    if (start.kind == SquareKind.goal) return 0;
+
+    final queue = <String>[fromSquareId];
+    final distances = <String, int>{fromSquareId: 0};
+    var cursor = 0;
+
+    while (cursor < queue.length) {
+      final currentId = queue[cursor++];
+      final currentDistance = distances[currentId]!;
+      for (final next in outgoingSquares(currentId)) {
+        if (distances.containsKey(next.id)) continue;
+        final distance = currentDistance + 1;
+        if (next.kind == SquareKind.goal) return distance;
+        distances[next.id] = distance;
+        queue.add(next.id);
+      }
+    }
+    return null;
+  }
+
+  bool canReachGoalFrom(String squareId) => shortestDistanceToGoal(squareId) != null;
+
+  List<BoardSquare> orderedPath() {
+    final start = startSquare;
+    if (start == null) return const <BoardSquare>[];
 
     final path = <BoardSquare>[];
     final visited = <String>{};
     BoardSquare? current = start;
     while (current != null && visited.add(current.id)) {
       path.add(current);
-      final nextId = nextById[current.id];
-      current = nextId == null ? null : squaresById[nextId];
+      final next = outgoingSquares(current.id);
+      current = next.isEmpty ? null : next.first;
     }
     return path;
   }
 
   bool get isPlayable {
-    final path = orderedPath();
-    return path.length >= 2 &&
-        path.first.kind == SquareKind.start &&
-        path.last.kind == SquareKind.goal;
+    final start = startSquare;
+    if (start == null) return false;
+    if (!squares.any((square) => square.kind == SquareKind.goal)) return false;
+    return canReachGoalFrom(start.id);
   }
 
   Map<String, dynamic> toJson() => {
