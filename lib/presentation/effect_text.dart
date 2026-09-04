@@ -20,10 +20,22 @@ String conditionDescription(EffectCondition? condition) {
       final rawPoints = condition.parameters['points'];
       final points = rawPoints is num ? rawPoints.toInt() : 0;
       return '★ $points pt以下';
+    case EffectConditionType.pointsBetween:
+      final rawMin = condition.parameters['minPoints'];
+      final rawMax = condition.parameters['maxPoints'];
+      final first = rawMin is num ? rawMin.toInt() : 0;
+      final second = rawMax is num ? rawMax.toInt() : 0;
+      final minPoints = first <= second ? first : second;
+      final maxPoints = first <= second ? second : first;
+      return '★ $minPoints〜$maxPoints pt';
     case EffectConditionType.hasItem:
       final rawName = condition.parameters['itemName'];
       final itemName = rawName is String ? rawName.trim() : '';
       return itemName.isEmpty ? '🎒 アイテム所持' : '🎒「$itemName」を所持';
+    case EffectConditionType.notHasItem:
+      final rawName = condition.parameters['itemName'];
+      final itemName = rawName is String ? rawName.trim() : '';
+      return itemName.isEmpty ? '🎒 アイテム未所持' : '🎒「$itemName」を未所持';
     case EffectConditionType.itemQuantityAtLeast:
       final rawName = condition.parameters['itemName'];
       final itemName = rawName is String ? rawName.trim() : '';
