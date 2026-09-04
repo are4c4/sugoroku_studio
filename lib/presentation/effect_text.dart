@@ -11,13 +11,28 @@ String triggerDescription(EffectTrigger trigger) {
 
 String conditionDescription(EffectCondition? condition) {
   if (condition == null) return '条件なし';
-  final rawPoints = condition.parameters['points'];
-  final points = rawPoints is num ? rawPoints.toInt() : 0;
   switch (condition.type) {
     case EffectConditionType.pointsAtLeast:
+      final rawPoints = condition.parameters['points'];
+      final points = rawPoints is num ? rawPoints.toInt() : 0;
       return '★ $points pt以上';
     case EffectConditionType.pointsAtMost:
+      final rawPoints = condition.parameters['points'];
+      final points = rawPoints is num ? rawPoints.toInt() : 0;
       return '★ $points pt以下';
+    case EffectConditionType.hasItem:
+      final rawName = condition.parameters['itemName'];
+      final itemName = rawName is String ? rawName.trim() : '';
+      return itemName.isEmpty ? '🎒 アイテム所持' : '🎒「$itemName」を所持';
+    case EffectConditionType.itemQuantityAtLeast:
+      final rawName = condition.parameters['itemName'];
+      final itemName = rawName is String ? rawName.trim() : '';
+      final rawQuantity = condition.parameters['quantity'];
+      final quantity = rawQuantity is num ? rawQuantity.toInt() : 1;
+      final threshold = quantity < 1 ? 1 : quantity;
+      return itemName.isEmpty
+          ? '🎒 アイテム×$threshold以上'
+          : '🎒「$itemName」×$threshold以上';
   }
 }
 
