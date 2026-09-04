@@ -26,7 +26,9 @@ enum _ConditionPreset {
   none,
   pointsAtLeast,
   pointsAtMost,
+  pointsBetween,
   hasItem,
+  notHasItem,
   itemQuantityAtLeast,
 }
 
@@ -282,8 +284,12 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return _ConditionPreset.pointsAtLeast;
       case EffectConditionType.pointsAtMost:
         return _ConditionPreset.pointsAtMost;
+      case EffectConditionType.pointsBetween:
+        return _ConditionPreset.pointsBetween;
       case EffectConditionType.hasItem:
         return _ConditionPreset.hasItem;
+      case EffectConditionType.notHasItem:
+        return _ConditionPreset.notHasItem;
       case EffectConditionType.itemQuantityAtLeast:
         return _ConditionPreset.itemQuantityAtLeast;
     }
@@ -291,8 +297,18 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 
   int _conditionPointsFor(EffectCondition? condition) {
     if (condition == null) return 0;
+    if (condition.type == EffectConditionType.pointsBetween) {
+      final raw = condition.parameters['minPoints'];
+      return raw is num ? raw.toInt() : 0;
+    }
     final rawPoints = condition.parameters['points'];
     return rawPoints is num ? rawPoints.toInt() : 0;
+  }
+
+  int _conditionMaxPointsFor(EffectCondition? condition) {
+    if (condition?.type != EffectConditionType.pointsBetween) return 10;
+    final raw = condition!.parameters['maxPoints'];
+    return raw is num ? raw.toInt() : 10;
   }
 
   String _conditionItemNameFor(EffectCondition? condition) {
@@ -311,6 +327,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   EffectCondition? _conditionFor(
     _ConditionPreset preset, {
     required int points,
+    required int maxPoints,
     required String itemName,
     required int quantity,
   }) {
@@ -328,11 +345,23 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           type: EffectConditionType.pointsAtMost,
           parameters: {'points': points},
         );
+      case _ConditionPreset.pointsBetween:
+        return EffectCondition(
+          type: EffectConditionType.pointsBetween,
+          parameters: {'minPoints': points, 'maxPoints': maxPoints},
+        );
       case _ConditionPreset.hasItem:
         final name = itemName.trim();
         if (name.isEmpty) return null;
         return EffectCondition(
           type: EffectConditionType.hasItem,
+          parameters: {'itemName': name},
+        );
+      case _ConditionPreset.notHasItem:
+        final name = itemName.trim();
+        if (name.isEmpty) return null;
+        return EffectCondition(
+          type: EffectConditionType.notHasItem,
           parameters: {'itemName': name},
         );
       case _ConditionPreset.itemQuantityAtLeast:
@@ -353,8 +382,12 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return 'ポイントがN以上';
       case _ConditionPreset.pointsAtMost:
         return 'ポイントがN以下';
+      case _ConditionPreset.pointsBetween:
+        return 'ポイントがN〜Mの範囲';
       case _ConditionPreset.hasItem:
         return '指定アイテムを持っている';
+      case _ConditionPreset.notHasItem:
+        return '指定アイテムを持っていない';
       case _ConditionPreset.itemQuantityAtLeast:
         return '指定アイテムをN個以上持っている';
     }
@@ -547,6 +580,9 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     final conditionPointsController = TextEditingController(
       text: _conditionPointsFor(initialEffect?.condition).toString(),
     );
+    final conditionMaxPointsController = TextEditingController(
+      text: _conditionMaxPointsFor(initialEffect?.condition).toString(),
+    );
     final conditionItemNameController = TextEditingController(
       text: _conditionItemNameFor(initialEffect?.condition),
     );
@@ -579,9 +615,13 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
             final needsRandomOptions = preset == _EffectPreset.randomEvent;
             final needsConditionPoints =
                 conditionPreset == _ConditionPreset.pointsAtLeast ||
-                conditionPreset == _ConditionPreset.pointsAtMost;
+                conditionPreset == _ConditionPreset.pointsAtMost ||
+                conditionPreset == _ConditionPreset.pointsBetween;
+            final needsConditionMaxPoints =
+                conditionPreset == _ConditionPreset.pointsBetween;
             final needsConditionItemName =
                 conditionPreset == _ConditionPreset.hasItem ||
+                conditionPreset == _ConditionPreset.notHasItem ||
                 conditionPreset == _ConditionPreset.itemQuantityAtLeast;
             final needsConditionQuantity =
                 conditionPreset == _ConditionPreset.itemQuantityAtLeast;
@@ -666,9 +706,26 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                           controller: conditionPointsController,
                           keyboardType:
                               const TextInputType.numberWithOptions(signed: true),
+                          decoration: InputDecoration(
+                            labelText: needsConditionMaxPoints
+                                ? '条件の最小ポイント'
+                                : '条件のポイント値',
+                            helperText: needsConditionMaxPoints
+                                ? '範囲の一方の端を入力してください'
+                                : '現在ポイントと比較する整数を入力してください',
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
+                      if (needsConditionMaxPoints) ...[
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: conditionMaxPointsController,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(signed: true),
                           decoration: const InputDecoration(
-                            labelText: '条件のポイント値',
-                            helperText: '現在ポイントと比較する整数を入力してください',
+                            labelText: '条件の最大ポイント',
+                            helperText: '入力順が逆でも小さい方を下限として判定します',
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -845,6 +902,10 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                                 conditionPointsController.text.trim(),
                               ) ??
                               0;
+                          final conditionMaxPoints = int.tryParse(
+                                conditionMaxPointsController.text.trim(),
+                              ) ??
+                              10;
                           final conditionQuantity = int.tryParse(
                                 conditionQuantityController.text.trim(),
                               ) ??
@@ -852,11 +913,13 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                           final condition = _conditionFor(
                             conditionPreset,
                             points: conditionPoints,
+                            maxPoints: conditionMaxPoints,
                             itemName: conditionItemNameController.text,
                             quantity: conditionQuantity,
                           );
                           final requiresItemName =
                               conditionPreset == _ConditionPreset.hasItem ||
+                              conditionPreset == _ConditionPreset.notHasItem ||
                               conditionPreset ==
                                   _ConditionPreset.itemQuantityAtLeast;
                           if (requiresItemName && condition == null) return;
@@ -887,6 +950,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     messageController.dispose();
     itemNameController.dispose();
     conditionPointsController.dispose();
+    conditionMaxPointsController.dispose();
     conditionItemNameController.dispose();
     conditionQuantityController.dispose();
     return result;

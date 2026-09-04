@@ -118,6 +118,42 @@ void main() {
     expect(aboveResult.events.whereType<SquareEffectApplied>(), isEmpty);
   });
 
+  test('pointsBetween includes both boundaries and normalizes reversed bounds',
+      () async {
+    const effect = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.showMessage,
+      parameters: {'message': 'middle range'},
+      condition: EffectCondition(
+        type: EffectConditionType.pointsBetween,
+        parameters: {'minPoints': 10, 'maxPoints': 5},
+      ),
+    );
+    final engine = GameEngine();
+
+    for (final points in [5, 7, 10]) {
+      final state = engine.createGame(
+        board: createConditionalBoard(const [effect]),
+        players: [playerWithPoints(points)],
+      );
+      final result = await engine.rollCurrentPlayer(state, dice: 1);
+      expect(
+        result.events.whereType<SquareEffectApplied>(),
+        hasLength(1),
+        reason: '$points should be inside the inclusive range',
+      );
+    }
+
+    for (final points in [4, 11]) {
+      final state = engine.createGame(
+        board: createConditionalBoard(const [effect]),
+        players: [playerWithPoints(points)],
+      );
+      final result = await engine.rollCurrentPlayer(state, dice: 1);
+      expect(result.events.whereType<SquareEffectApplied>(), isEmpty);
+    }
+  });
+
   test('later conditions see point changes from earlier actions', () async {
     const gain = SquareEffect(
       trigger: EffectTrigger.onLand,
@@ -173,6 +209,34 @@ void main() {
     );
     final ownedResult = await engine.rollCurrentPlayer(owned, dice: 1);
     expect(ownedResult.state.currentPlayer.points, 4);
+  });
+
+  test('notHasItem fires only when the named item is missing', () async {
+    const effect = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.changePoints,
+      parameters: {'points': 6},
+      condition: EffectCondition(
+        type: EffectConditionType.notHasItem,
+        parameters: {'itemName': 'Pass'},
+      ),
+    );
+    final engine = GameEngine();
+
+    final missing = engine.createGame(
+      board: createConditionalBoard(const [effect]),
+      players: [playerWithInventory(const {})],
+    );
+    final missingResult = await engine.rollCurrentPlayer(missing, dice: 1);
+    expect(missingResult.state.currentPlayer.points, 6);
+
+    final owned = engine.createGame(
+      board: createConditionalBoard(const [effect]),
+      players: [playerWithInventory(const {'Pass': 1})],
+    );
+    final ownedResult = await engine.rollCurrentPlayer(owned, dice: 1);
+    expect(ownedResult.state.currentPlayer.points, 0);
+    expect(ownedResult.events.whereType<PlayerPointsChanged>(), isEmpty);
   });
 
   test('itemQuantityAtLeast includes the threshold and skips below it', () async {
@@ -231,23 +295,52 @@ void main() {
     expect(result.events.whereType<PlayerPointsChanged>(), hasLength(1));
   });
 
-  test('JSON round-trip preserves optional and item conditions', () {
+  test('notHasItem sees an item removed by an earlier consumption action', () async {
+    const consume = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.consumeItem,
+      parameters: {'itemName': 'Pass', 'quantity': 1},
+    );
+    const reward = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.changePoints,
+      parameters: {'points': 8},
+      condition: EffectCondition(
+        type: EffectConditionType.notHasItem,
+        parameters: {'itemName': 'Pass'},
+      ),
+    );
+    final engine = GameEngine();
+    final state = engine.createGame(
+      board: createConditionalBoard(const [consume, reward]),
+      players: [playerWithInventory(const {'Pass': 1})],
+    );
+
+    final result = await engine.rollCurrentPlayer(state, dice: 1);
+
+    expect(result.state.currentPlayer.itemQuantity('Pass'), 0);
+    expect(result.state.currentPlayer.points, 8);
+    expect(result.events.whereType<PlayerItemConsumed>(), hasLength(1));
+    expect(result.events.whereType<PlayerPointsChanged>(), hasLength(1));
+  });
+
+  test('JSON round-trip preserves range and item conditions', () {
     const pointCondition = SquareEffect(
       trigger: EffectTrigger.onLand,
       actionType: EffectActionType.showMessage,
-      parameters: {'message': 'qualified'},
+      parameters: {'message': 'range'},
       condition: EffectCondition(
-        type: EffectConditionType.pointsAtLeast,
-        parameters: {'points': 15},
+        type: EffectConditionType.pointsBetween,
+        parameters: {'minPoints': 5, 'maxPoints': 15},
       ),
     );
     const itemCondition = SquareEffect(
       trigger: EffectTrigger.onLand,
       actionType: EffectActionType.showMessage,
-      parameters: {'message': 'keys'},
+      parameters: {'message': 'missing pass'},
       condition: EffectCondition(
-        type: EffectConditionType.itemQuantityAtLeast,
-        parameters: {'itemName': 'Key', 'quantity': 2},
+        type: EffectConditionType.notHasItem,
+        parameters: {'itemName': 'Pass'},
       ),
     );
     const unconditionalEffect = SquareEffect(
@@ -263,14 +356,11 @@ void main() {
     );
     final effects = restored.squareById('event')!.effects;
 
-    expect(effects[0].condition?.type, EffectConditionType.pointsAtLeast);
-    expect(effects[0].condition?.parameters['points'], 15);
-    expect(
-      effects[1].condition?.type,
-      EffectConditionType.itemQuantityAtLeast,
-    );
-    expect(effects[1].condition?.parameters['itemName'], 'Key');
-    expect(effects[1].condition?.parameters['quantity'], 2);
+    expect(effects[0].condition?.type, EffectConditionType.pointsBetween);
+    expect(effects[0].condition?.parameters['minPoints'], 5);
+    expect(effects[0].condition?.parameters['maxPoints'], 15);
+    expect(effects[1].condition?.type, EffectConditionType.notHasItem);
+    expect(effects[1].condition?.parameters['itemName'], 'Pass');
     expect(effects[2].condition, isNull);
   });
 }

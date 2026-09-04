@@ -5,7 +5,9 @@ enum EffectTrigger { onLand, onPass }
 enum EffectConditionType {
   pointsAtLeast,
   pointsAtMost,
+  pointsBetween,
   hasItem,
+  notHasItem,
   itemQuantityAtLeast,
 }
 

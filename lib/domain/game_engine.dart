@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'board.dart';
+import 'effect_condition_evaluator.dart';
 import 'game_event.dart';
 import 'game_state.dart';
 import 'player.dart';
@@ -122,29 +123,11 @@ class GameEngine {
     }
 
     bool conditionMatches(EffectCondition? condition) {
-      if (condition == null) return true;
-      switch (condition.type) {
-        case EffectConditionType.pointsAtLeast:
-          final rawPoints = condition.parameters['points'];
-          final threshold = rawPoints is num ? rawPoints.toInt() : 0;
-          return currentPoints >= threshold;
-        case EffectConditionType.pointsAtMost:
-          final rawPoints = condition.parameters['points'];
-          final threshold = rawPoints is num ? rawPoints.toInt() : 0;
-          return currentPoints <= threshold;
-        case EffectConditionType.hasItem:
-          final rawName = condition.parameters['itemName'];
-          final itemName = rawName is String ? rawName.trim() : '';
-          return itemName.isNotEmpty && (currentInventory[itemName] ?? 0) > 0;
-        case EffectConditionType.itemQuantityAtLeast:
-          final rawName = condition.parameters['itemName'];
-          final itemName = rawName is String ? rawName.trim() : '';
-          final rawQuantity = condition.parameters['quantity'];
-          final quantity = rawQuantity is num ? rawQuantity.toInt() : 1;
-          final threshold = quantity < 1 ? 1 : quantity;
-          return itemName.isNotEmpty &&
-              (currentInventory[itemName] ?? 0) >= threshold;
-      }
+      return effectConditionMatches(
+        condition,
+        points: currentPoints,
+        inventory: currentInventory,
+      );
     }
 
     void changePoints(int delta) {
