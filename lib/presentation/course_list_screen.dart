@@ -4,7 +4,7 @@ import '../core/id.dart';
 import '../data/course_repository.dart';
 import '../domain/board.dart';
 import 'course_editor_screen.dart';
-import 'play_screen.dart';
+import 'player_setup_screen.dart';
 
 class CourseListScreen extends StatefulWidget {
   const CourseListScreen({required this.repository, super.key});
@@ -140,7 +140,7 @@ class _CourseListScreenState extends State<CourseListScreen> {
 
   void _playBoard(Board board) {
     Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(builder: (_) => PlayScreen(board: board)),
+      MaterialPageRoute<void>(builder: (_) => PlayerSetupScreen(board: board)),
     );
   }
 

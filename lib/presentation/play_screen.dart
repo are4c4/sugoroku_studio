@@ -9,9 +9,14 @@ import 'effect_text.dart';
 import 'widgets/board_painter.dart';
 
 class PlayScreen extends StatefulWidget {
-  const PlayScreen({required this.board, super.key});
+  const PlayScreen({
+    required this.board,
+    required this.players,
+    super.key,
+  });
 
   final Board board;
+  final List<Player> players;
 
   @override
   State<PlayScreen> createState() => _PlayScreenState();
@@ -23,37 +28,32 @@ class _PlayScreenState extends State<PlayScreen> {
 
   late final GameEngine _engine;
   late GameState _state;
-  late String _displaySquareId;
+  late Map<String, String> _displaySquareIds;
   bool _rolling = false;
-  String _message = 'サイコロを振ってスタート！';
+  bool _cpuTurnScheduled = false;
+  String _message = '';
 
   @override
   void initState() {
     super.initState();
     _engine = GameEngine();
-    _state = _engine.createGame(
-      board: widget.board,
-      players: const [
-        Player(
-          id: 'human-1',
-          name: 'プレイヤー1',
-          type: PlayerType.human,
-          currentSquareId: '',
-        ),
-      ],
-    );
-    _displaySquareId = _state.currentPlayer.currentSquareId;
+    _state = _engine.createGame(board: widget.board, players: widget.players);
+    _displaySquareIds = {
+      for (final player in _state.players) player.id: player.currentSquareId,
+    };
+    _message = '${_state.currentPlayer.name}のターンです';
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleCpuTurn());
   }
 
-  String _resultMessage(GameTurnResult result) {
+  String _resultMessage(GameTurnResult result, Player actingPlayer) {
     if (result.events.any((event) => event is GoalReached)) {
-      return 'ゴール！ 🎉';
+      return '${actingPlayer.name}がゴール！ 🎉';
     }
     if (result.events.any((event) => event is PlayerTurnSkipped)) {
-      return '1回休み！ このターンはサイコロを振りませんでした';
+      return '${actingPlayer.name}は1回休みです';
     }
     if (result.events.any((event) => event is ExtraRollGranted)) {
-      return 'もう一度サイコロを振れます！';
+      return '${actingPlayer.name}はもう一度サイコロを振れます！';
     }
 
     SquareEffectApplied? appliedEffect;
@@ -63,21 +63,46 @@ class _PlayScreenState extends State<PlayScreen> {
     if (appliedEffect != null) {
       switch (appliedEffect.effect.actionType) {
         case EffectActionType.skipTurn:
-          return '${effectDescription(appliedEffect.effect)}！ 次のターンは休みです';
+          return '${actingPlayer.name}: ${effectDescription(appliedEffect.effect)}！ 次回は休みです';
         case EffectActionType.moveBy:
         case EffectActionType.moveToStart:
-          return '${effectDescription(appliedEffect.effect)}！';
+          return '${actingPlayer.name}: ${effectDescription(appliedEffect.effect)}！';
         case EffectActionType.rollAgain:
-          return 'もう一度サイコロを振れます！';
+          return '${actingPlayer.name}はもう一度サイコロを振れます！';
         case EffectActionType.warpTo:
-          return effectDescription(appliedEffect.effect);
+          return '${actingPlayer.name}: ${effectDescription(appliedEffect.effect)}';
       }
     }
-    return '次のサイコロを振りましょう';
+    return '次は${result.state.currentPlayer.name}のターンです';
   }
 
-  Future<void> _rollDice() async {
+  void _scheduleCpuTurn() {
+    if (!mounted ||
+        _rolling ||
+        _cpuTurnScheduled ||
+        _state.status == GameStatus.finished ||
+        _state.currentPlayer.type != PlayerType.cpu) {
+      return;
+    }
+
+    _cpuTurnScheduled = true;
+    Future<void>.delayed(const Duration(milliseconds: 700), () async {
+      if (!mounted) return;
+      _cpuTurnScheduled = false;
+      if (_rolling ||
+          _state.status == GameStatus.finished ||
+          _state.currentPlayer.type != PlayerType.cpu) {
+        return;
+      }
+      setState(() => _message = '${_state.currentPlayer.name}がサイコロを振ります…');
+      await _runCurrentTurn();
+    });
+  }
+
+  Future<void> _runCurrentTurn() async {
     if (_rolling || _state.status == GameStatus.finished) return;
+
+    final actingPlayer = _state.currentPlayer;
     setState(() => _rolling = true);
 
     final result = _engine.rollCurrentPlayer(_state);
@@ -87,31 +112,40 @@ class _PlayScreenState extends State<PlayScreen> {
       if (!mounted) return;
       setState(() {
         _state = result.state;
-        _message = _resultMessage(result);
+        _displaySquareIds = {
+          for (final player in result.state.players)
+            player.id: player.currentSquareId,
+        };
+        _message = _resultMessage(result, actingPlayer);
         _rolling = false;
       });
+      _scheduleCpuTurn();
       return;
     }
 
     final dice = result.state.diceResult;
     if (dice != null) {
-      setState(() => _message = '🎲 $dice が出ました');
+      setState(() => _message = '${actingPlayer.name}: 🎲 $dice');
     }
 
     for (final event in result.events) {
       if (event is! PlayerMoved) continue;
       await Future<void>.delayed(const Duration(milliseconds: 220));
       if (!mounted) return;
-      setState(() => _displaySquareId = event.toSquareId);
+      setState(() => _displaySquareIds[event.playerId] = event.toSquareId);
     }
 
     if (!mounted) return;
     setState(() {
       _state = result.state;
-      _displaySquareId = result.state.players.first.currentSquareId;
-      _message = _resultMessage(result);
+      _displaySquareIds = {
+        for (final player in result.state.players)
+          player.id: player.currentSquareId,
+      };
+      _message = _resultMessage(result, actingPlayer);
       _rolling = false;
     });
+    _scheduleCpuTurn();
   }
 
   Color _colorFor(BoardSquare square) {
@@ -136,11 +170,23 @@ class _PlayScreenState extends State<PlayScreen> {
     }
   }
 
+  Color _playerColor(int index) {
+    const colors = <Color>[
+      Colors.red,
+      Colors.blue,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.pink,
+      Colors.brown,
+    ];
+    return colors[index % colors.length];
+  }
+
   @override
   Widget build(BuildContext context) {
-    final displaySquare = widget.board.squares.firstWhere(
-      (square) => square.id == _displaySquareId,
-    );
+    final currentIsHuman = _state.currentPlayer.type == PlayerType.human;
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.board.name)),
@@ -204,24 +250,48 @@ class _PlayScreenState extends State<PlayScreen> {
                           ),
                         ),
                       ),
-                    AnimatedPositioned(
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOut,
-                      left: displaySquare.position.x + 23,
-                      top: displaySquare.position.y - 20,
-                      width: 28,
-                      height: 28,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 3),
-                          boxShadow: const [
-                            BoxShadow(blurRadius: 6, color: Colors.black26),
-                          ],
-                        ),
+                    for (var index = 0;
+                        index < _state.players.length;
+                        index++)
+                      Builder(
+                        builder: (context) {
+                          final player = _state.players[index];
+                          final squareId = _displaySquareIds[player.id] ??
+                              player.currentSquareId;
+                          final square = widget.board.squares.firstWhere(
+                            (item) => item.id == squareId,
+                          );
+                          return AnimatedPositioned(
+                            key: ValueKey(player.id),
+                            duration: const Duration(milliseconds: 180),
+                            curve: Curves.easeOut,
+                            left: square.position.x + 6 + (index % 3) * 23,
+                            top: square.position.y - 15 + (index ~/ 3) * 24,
+                            width: 22,
+                            height: 22,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: _playerColor(index),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 2),
+                                boxShadow: const [
+                                  BoxShadow(blurRadius: 4, color: Colors.black26),
+                                ],
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '${index + 1}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -232,37 +302,85 @@ class _PlayScreenState extends State<PlayScreen> {
             child: SafeArea(
               top: false,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                child: Row(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
                         children: [
-                          Text(
-                            _state.status == GameStatus.finished
-                                ? 'ゲーム終了'
-                                : 'ターン ${_state.turn}',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          Text(_message),
+                          for (var index = 0;
+                              index < _state.players.length;
+                              index++) ...[
+                            Chip(
+                              avatar: CircleAvatar(
+                                backgroundColor: _playerColor(index),
+                                child: Text(
+                                  '${index + 1}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ),
+                              label: Text(
+                                '${_state.players[index].name}${_state.players[index].type == PlayerType.cpu ? ' (CPU)' : ''}',
+                              ),
+                              backgroundColor:
+                                  index == _state.currentPlayerIndex
+                                      ? Theme.of(context)
+                                          .colorScheme
+                                          .secondaryContainer
+                                      : null,
+                            ),
+                            const SizedBox(width: 6),
+                          ],
                         ],
                       ),
                     ),
-                    FilledButton.icon(
-                      onPressed: _rolling || _state.status == GameStatus.finished
-                          ? null
-                          : _rollDice,
-                      icon: _rolling
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.casino_outlined),
-                      label: Text(
-                        _state.status == GameStatus.finished ? 'ゴール' : '振る',
-                      ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _state.status == GameStatus.finished
+                                    ? 'ゲーム終了'
+                                    : 'ターン ${_state.turn}・${_state.currentPlayer.name}',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              Text(_message),
+                            ],
+                          ),
+                        ),
+                        FilledButton.icon(
+                          onPressed: !_rolling &&
+                                  _state.status != GameStatus.finished &&
+                                  currentIsHuman
+                              ? _runCurrentTurn
+                              : null,
+                          icon: _rolling
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : currentIsHuman
+                                  ? const Icon(Icons.casino_outlined)
+                                  : const Icon(Icons.smart_toy_outlined),
+                          label: Text(
+                            _state.status == GameStatus.finished
+                                ? 'ゴール'
+                                : currentIsHuman
+                                    ? '振る'
+                                    : 'CPUターン',
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
