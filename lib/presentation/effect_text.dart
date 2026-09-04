@@ -10,7 +10,13 @@ String triggerDescription(EffectTrigger trigger) {
 }
 
 String conditionDescription(EffectCondition? condition) {
+  return _conditionDescription(condition, depth: 0);
+}
+
+String _conditionDescription(EffectCondition? condition, {required int depth}) {
   if (condition == null) return '条件なし';
+  if (depth >= 4) return '複合条件';
+
   switch (condition.type) {
     case EffectConditionType.pointsAtLeast:
       final rawPoints = condition.parameters['points'];
@@ -45,6 +51,20 @@ String conditionDescription(EffectCondition? condition) {
       return itemName.isEmpty
           ? '🎒 アイテム×$threshold以上'
           : '🎒「$itemName」×$threshold以上';
+    case EffectConditionType.allOf:
+      final children = condition.childConditions;
+      if (children.isEmpty) return 'AND条件（未設定）';
+      return children
+          .map((child) => _conditionDescription(child, depth: depth + 1))
+          .map((text) => '($text)')
+          .join(' AND ');
+    case EffectConditionType.anyOf:
+      final children = condition.childConditions;
+      if (children.isEmpty) return 'OR条件（未設定）';
+      return children
+          .map((child) => _conditionDescription(child, depth: depth + 1))
+          .map((text) => '($text)')
+          .join(' OR ');
   }
 }
 
