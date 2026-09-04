@@ -12,25 +12,53 @@ enum _PrimitiveConditionPreset {
   itemQuantityAtLeast,
 }
 
+bool _isGroupType(EffectConditionType type) {
+  return type == EffectConditionType.allOf ||
+      type == EffectConditionType.anyOf ||
+      type == EffectConditionType.not;
+}
+
+String _operatorLabel(EffectConditionType type) {
+  return switch (type) {
+    EffectConditionType.allOf => 'AND',
+    EffectConditionType.anyOf => 'OR',
+    EffectConditionType.not => 'NOT',
+    _ => '',
+  };
+}
+
+int _requiredChildCount(EffectConditionType type) {
+  return type == EffectConditionType.not ? 1 : 2;
+}
+
+bool _hasValidChildCount(
+  EffectConditionType type,
+  List<EffectCondition> conditions,
+) {
+  if (type == EffectConditionType.not) return conditions.length == 1;
+  return conditions.length >= 2;
+}
+
 Future<List<EffectCondition>?> showConditionGroupEditor(
   BuildContext context, {
   required EffectConditionType groupType,
   required List<EffectCondition> initialConditions,
   int depth = 0,
 }) async {
-  assert(
-    groupType == EffectConditionType.allOf ||
-        groupType == EffectConditionType.anyOf,
-  );
+  assert(_isGroupType(groupType));
 
   final conditions = List<EffectCondition>.of(initialConditions);
-  final operatorLabel = groupType == EffectConditionType.allOf ? 'AND' : 'OR';
+  final operatorLabel = _operatorLabel(groupType);
+  final requiredCount = _requiredChildCount(groupType);
 
   return showDialog<List<EffectCondition>>(
     context: context,
     builder: (dialogContext) => StatefulBuilder(
       builder: (context, setDialogState) {
+        final canAddChild = groupType != EffectConditionType.not || conditions.isEmpty;
+
         Future<void> addPrimitive() async {
+          if (!canAddChild) return;
           final condition = await _showPrimitiveConditionEditor(context);
           if (condition != null && context.mounted) {
             setDialogState(() => conditions.add(condition));
@@ -38,6 +66,7 @@ Future<List<EffectCondition>?> showConditionGroupEditor(
         }
 
         Future<void> addGroup(EffectConditionType type) async {
+          if (!canAddChild) return;
           final children = await showConditionGroupEditor(
             context,
             groupType: type,
@@ -59,8 +88,7 @@ Future<List<EffectCondition>?> showConditionGroupEditor(
 
         Future<void> editCondition(int index) async {
           final current = conditions[index];
-          if (current.type == EffectConditionType.allOf ||
-              current.type == EffectConditionType.anyOf) {
+          if (_isGroupType(current.type)) {
             final children = await showConditionGroupEditor(
               context,
               groupType: current.type,
@@ -88,6 +116,26 @@ Future<List<EffectCondition>?> showConditionGroupEditor(
           }
         }
 
+        String helpText() {
+          return switch (groupType) {
+            EffectConditionType.allOf => 'すべての子条件を満たしたときに成立します。',
+            EffectConditionType.anyOf => 'いずれか1つの子条件を満たしたときに成立します。',
+            EffectConditionType.not => '1つの子条件の真偽を反転します。',
+            _ => '',
+          };
+        }
+
+        String childCountText() {
+          if (!_hasValidChildCount(groupType, conditions)) {
+            return groupType == EffectConditionType.not
+                ? 'NOT条件には子条件がちょうど1つ必要です。'
+                : '複合条件には2つ以上の子条件が必要です。';
+          }
+          return groupType == EffectConditionType.not
+              ? '1個の子条件をNOTで反転します。'
+              : '${conditions.length}個の子条件を$operatorLabelで評価します。';
+        }
+
         return AlertDialog(
           title: Text('$operatorLabel 条件を編集'),
           content: SizedBox(
@@ -97,16 +145,16 @@ Future<List<EffectCondition>?> showConditionGroupEditor(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    groupType == EffectConditionType.allOf
-                        ? 'すべての子条件を満たしたときに成立します。'
-                        : 'いずれか1つの子条件を満たしたときに成立します。',
-                  ),
+                  Text(helpText()),
                   const SizedBox(height: 12),
                   if (conditions.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text('子条件がありません。2つ以上追加してください。'),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        requiredCount == 1
+                            ? '子条件がありません。1つ追加してください。'
+                            : '子条件がありません。2つ以上追加してください。',
+                      ),
                     )
                   else
                     for (var index = 0; index < conditions.length; index++)
@@ -119,11 +167,9 @@ Future<List<EffectCondition>?> showConditionGroupEditor(
                           ),
                           title: Text(conditionDescription(conditions[index])),
                           subtitle: Text(
-                            conditions[index].type == EffectConditionType.allOf
-                                ? 'AND グループ'
-                                : conditions[index].type == EffectConditionType.anyOf
-                                    ? 'OR グループ'
-                                    : '基本条件',
+                            _isGroupType(conditions[index].type)
+                                ? '${_operatorLabel(conditions[index].type)} グループ'
+                                : '基本条件',
                           ),
                           onTap: () => editCondition(index),
                           trailing: IconButton(
@@ -141,29 +187,38 @@ Future<List<EffectCondition>?> showConditionGroupEditor(
                     runSpacing: 8,
                     children: [
                       OutlinedButton.icon(
-                        onPressed: addPrimitive,
+                        onPressed: canAddChild ? addPrimitive : null,
                         icon: const Icon(Icons.add),
                         label: const Text('基本条件を追加'),
                       ),
                       if (depth < 3) ...[
                         OutlinedButton.icon(
-                          onPressed: () => addGroup(EffectConditionType.allOf),
+                          onPressed: canAddChild
+                              ? () => addGroup(EffectConditionType.allOf)
+                              : null,
                           icon: const Icon(Icons.account_tree_outlined),
                           label: const Text('ANDを追加'),
                         ),
                         OutlinedButton.icon(
-                          onPressed: () => addGroup(EffectConditionType.anyOf),
+                          onPressed: canAddChild
+                              ? () => addGroup(EffectConditionType.anyOf)
+                              : null,
                           icon: const Icon(Icons.call_split_outlined),
                           label: const Text('ORを追加'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: canAddChild
+                              ? () => addGroup(EffectConditionType.not)
+                              : null,
+                          icon: const Icon(Icons.not_interested_outlined),
+                          label: const Text('NOTを追加'),
                         ),
                       ],
                     ],
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    conditions.length < 2
-                        ? '複合条件には2つ以上の子条件が必要です。'
-                        : '${conditions.length}個の子条件を$operatorLabelで評価します。',
+                    childCountText(),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -176,7 +231,7 @@ Future<List<EffectCondition>?> showConditionGroupEditor(
               child: const Text('キャンセル'),
             ),
             FilledButton(
-              onPressed: conditions.length < 2
+              onPressed: !_hasValidChildCount(groupType, conditions)
                   ? null
                   : () => Navigator.pop(
                         dialogContext,
@@ -342,7 +397,9 @@ _PrimitiveConditionPreset _presetFor(EffectCondition? condition) {
     EffectConditionType.notHasItem => _PrimitiveConditionPreset.notHasItem,
     EffectConditionType.itemQuantityAtLeast =>
       _PrimitiveConditionPreset.itemQuantityAtLeast,
-    EffectConditionType.allOf || EffectConditionType.anyOf =>
+    EffectConditionType.allOf ||
+    EffectConditionType.anyOf ||
+    EffectConditionType.not =>
       _PrimitiveConditionPreset.pointsAtLeast,
   };
 }
