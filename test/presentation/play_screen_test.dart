@@ -159,7 +159,7 @@ void main() {
     await pumpFor(tester, const Duration(milliseconds: 1700));
 
     expect(find.text('ターン 1・プレイヤー1'), findsOneWidget);
-    expect(find.textContaining('★ 5pt'), findsOneWidget);
+    expect(find.text('プレイヤー1 · ★ 5pt · 🎒 1'), findsOneWidget);
     expect(find.text('振る'), findsOneWidget);
 
     await tester.tap(find.text('アイテム'));
