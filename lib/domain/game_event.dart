@@ -56,6 +56,20 @@ class SquareEffectApplied extends GameEvent {
   final SquareEffect effect;
 }
 
+class RandomEventChosen extends GameEvent {
+  const RandomEventChosen({
+    required this.playerId,
+    required this.squareId,
+    required this.optionIndex,
+    required this.option,
+  });
+
+  final String playerId;
+  final String squareId;
+  final int optionIndex;
+  final RandomEventOption option;
+}
+
 class PlayerPointsChanged extends GameEvent {
   const PlayerPointsChanged({
     required this.playerId,
