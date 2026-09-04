@@ -16,6 +16,7 @@ enum _EffectPreset {
   warpTo,
   showMessage,
   changePoints,
+  grantItem,
 }
 
 enum _ConditionPreset {
@@ -260,6 +261,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return _EffectPreset.showMessage;
       case EffectActionType.changePoints:
         return _EffectPreset.changePoints;
+      case EffectActionType.grantItem:
+        return _EffectPreset.grantItem;
     }
   }
 
@@ -312,6 +315,9 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       final rawPoints = effect.parameters['points'];
       return rawPoints is num ? rawPoints.toInt() : 0;
     }
+    if (effect.actionType == EffectActionType.grantItem) {
+      return effectItemQuantity(effect);
+    }
     final rawSteps = effect.parameters['steps'];
     if (rawSteps is num && rawSteps.toInt() != 0) {
       return rawSteps.toInt().abs();
@@ -336,6 +342,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     required int amount,
     required String? warpTargetId,
     required String message,
+    required String itemName,
   }) {
     final safeAmount = amount < 1 ? 1 : amount;
     switch (preset) {
@@ -398,6 +405,15 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           parameters: {'points': amount},
           condition: condition,
         );
+      case _EffectPreset.grantItem:
+        final name = itemName.trim();
+        if (name.isEmpty) return null;
+        return SquareEffect(
+          trigger: trigger,
+          actionType: EffectActionType.grantItem,
+          parameters: {'itemName': name, 'quantity': safeAmount},
+          condition: condition,
+        );
     }
   }
 
@@ -421,6 +437,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return 'メッセージを表示';
       case _EffectPreset.changePoints:
         return 'ポイントを増減';
+      case _EffectPreset.grantItem:
+        return 'アイテムを付与';
     }
   }
 
@@ -445,6 +463,9 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     final messageController = TextEditingController(
       text: initialEffect == null ? '' : effectMessage(initialEffect),
     );
+    final itemNameController = TextEditingController(
+      text: initialEffect == null ? '' : effectItemName(initialEffect),
+    );
     final conditionPointsController = TextEditingController(
       text: _conditionPointsFor(initialEffect?.condition).toString(),
     );
@@ -464,9 +485,11 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
             final needsAmount = preset == _EffectPreset.moveForward ||
                 preset == _EffectPreset.moveBackward ||
                 preset == _EffectPreset.skipTurn ||
-                preset == _EffectPreset.changePoints;
+                preset == _EffectPreset.changePoints ||
+                preset == _EffectPreset.grantItem;
             final needsWarpTarget = preset == _EffectPreset.warpTo;
             final needsMessage = preset == _EffectPreset.showMessage;
+            final needsItemName = preset == _EffectPreset.grantItem;
             final needsConditionPoints = conditionPreset != _ConditionPreset.none;
             final availablePresets = trigger == EffectTrigger.onPass
                 ? const [_EffectPreset.showMessage]
@@ -477,6 +500,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
             String amountLabel() {
               if (preset == _EffectPreset.skipTurn) return '休む回数';
               if (preset == _EffectPreset.changePoints) return '増減ポイント';
+              if (preset == _EffectPreset.grantItem) return '個数';
               return 'マス数';
             }
 
@@ -579,6 +603,17 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                           });
                         },
                       ),
+                      if (needsItemName) ...[
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: itemNameController,
+                          decoration: const InputDecoration(
+                            labelText: 'アイテム名',
+                            hintText: '例：金の鍵',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
                       if (needsAmount) ...[
                         const SizedBox(height: 14),
                         TextField(
@@ -666,6 +701,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                       amount: amount,
                       warpTargetId: warpTargetId,
                       message: messageController.text,
+                      itemName: itemNameController.text,
                     );
                     if (effect != null) {
                       Navigator.pop(dialogContext, effect);
@@ -682,6 +718,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 
     amountController.dispose();
     messageController.dispose();
+    itemNameController.dispose();
     conditionPointsController.dispose();
     return result;
   }
@@ -1038,6 +1075,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return Colors.cyan.shade200;
       case EffectActionType.changePoints:
         return Colors.yellow.shade300;
+      case EffectActionType.grantItem:
+        return Colors.lightGreen.shade300;
     }
   }
 
