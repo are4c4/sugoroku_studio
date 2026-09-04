@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../domain/board.dart';
+import '../domain/cpu_strategy.dart';
 import '../domain/game_engine.dart';
 import '../domain/game_event.dart';
 import '../domain/game_state.dart';
@@ -28,6 +29,7 @@ class _PlayScreenState extends State<PlayScreen> {
   static const double _squareSize = BoardConnectionPainter.squareSize;
 
   late final GameEngine _engine;
+  late final CpuStrategy _cpuStrategy;
   late GameState _state;
   late Map<String, String> _displaySquareIds;
   bool _rolling = false;
@@ -43,6 +45,7 @@ class _PlayScreenState extends State<PlayScreen> {
   void initState() {
     super.initState();
     _engine = GameEngine();
+    _cpuStrategy = const ShortestPathCpuStrategy();
     _state = _engine.createGame(board: widget.board, players: widget.players);
     _displaySquareIds = {
       for (final player in _state.players) player.id: player.currentSquareId,
@@ -72,14 +75,19 @@ class _PlayScreenState extends State<PlayScreen> {
           return '${actingPlayer.name}: ${effectDescription(appliedEffect.effect)}！ 次回は休みです';
         case EffectActionType.moveBy:
         case EffectActionType.moveToStart:
+        case EffectActionType.warpTo:
           return '${actingPlayer.name}: ${effectDescription(appliedEffect.effect)}！';
         case EffectActionType.rollAgain:
           return '${actingPlayer.name}はもう一度サイコロを振れます！';
-        case EffectActionType.warpTo:
-          return '${actingPlayer.name}: ${effectDescription(appliedEffect.effect)}';
       }
     }
     return '次は${result.state.currentPlayer.name}のターンです';
+  }
+
+  String _routeDistanceLabel(BoardSquare option) {
+    final distance = widget.board.shortestDistanceToGoal(option.id);
+    if (distance == null) return 'この先からゴールへ到達できません';
+    return 'ゴールまで最短 $distance マス';
   }
 
   void _scheduleCpuTurn() {
@@ -103,6 +111,61 @@ class _PlayScreenState extends State<PlayScreen> {
       setState(() => _message = '${_state.currentPlayer.name}がサイコロを振ります…');
       await _runCurrentTurn();
     });
+  }
+
+  Future<String> _selectRoute(RouteChoiceContext choice) async {
+    if (choice.player.type == PlayerType.cpu) {
+      return _cpuStrategy.chooseNextSquare(
+        board: choice.board,
+        player: choice.player,
+        from: choice.fromSquare,
+        options: choice.options,
+      );
+    }
+
+    if (!mounted) return choice.options.first.id;
+    final selected = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('進むルートを選択'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '${choice.fromSquare.label}から分岐します。残り${choice.remainingSteps}マスです。',
+              ),
+              const SizedBox(height: 12),
+              for (final option in choice.options)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.pop(dialogContext, option.id),
+                    icon: const Icon(Icons.alt_route),
+                    label: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(option.label),
+                          Text(
+                            _routeDistanceLabel(option),
+                            style: Theme.of(dialogContext).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return selected ?? choice.options.first.id;
   }
 
   Future<void> _animateDice(int finalValue) async {
@@ -143,16 +206,35 @@ class _PlayScreenState extends State<PlayScreen> {
 
   Future<void> _playEvents(
     GameTurnResult result,
-    Player actingPlayer,
-  ) async {
+    Player actingPlayer, {
+    required bool diceAlreadyAnimated,
+  }) async {
+    final finalPlayer = result.state.players.firstWhere(
+      (player) => player.id == actingPlayer.id,
+      orElse: () => actingPlayer,
+    );
+
     for (final event in result.events) {
       if (!mounted) return;
 
       if (event is DiceRolled) {
-        setState(() => _message = '${actingPlayer.name}がサイコロを振っています…');
-        await _animateDice(event.value);
+        if (!diceAlreadyAnimated) {
+          setState(
+            () => _message = '${actingPlayer.name}がサイコロを振っています…',
+          );
+          await _animateDice(event.value);
+        }
         if (!mounted) return;
         setState(() => _message = '${actingPlayer.name}: 🎲 ${event.value}');
+        continue;
+      }
+
+      if (event is RouteChosen) {
+        final target = widget.board.squareById(event.toSquareId);
+        await _showEffect(
+          event.fromSquareId,
+          '↗ ${target?.label ?? '選択したルート'}へ進みます',
+        );
         continue;
       }
 
@@ -178,7 +260,7 @@ class _PlayScreenState extends State<PlayScreen> {
 
       if (event is ExtraRollGranted) {
         await _showEffect(
-          actingPlayer.currentSquareId,
+          finalPlayer.currentSquareId,
           '🎲 もう一度振れます！',
         );
         continue;
@@ -209,8 +291,25 @@ class _PlayScreenState extends State<PlayScreen> {
     final actingPlayer = _state.currentPlayer;
     setState(() => _rolling = true);
 
-    final result = _engine.rollCurrentPlayer(_state);
-    await _playEvents(result, actingPlayer);
+    int? rolledDice;
+    if (actingPlayer.skipTurns == 0) {
+      rolledDice = _engine.rollDice();
+      setState(() => _message = '${actingPlayer.name}がサイコロを振っています…');
+      await _animateDice(rolledDice);
+      if (!mounted) return;
+      setState(() => _message = '${actingPlayer.name}: 🎲 $rolledDice');
+    }
+
+    final result = await _engine.rollCurrentPlayer(
+      _state,
+      dice: rolledDice,
+      routeSelector: _selectRoute,
+    );
+    await _playEvents(
+      result,
+      actingPlayer,
+      diceAlreadyAnimated: rolledDice != null,
+    );
     if (!mounted) return;
 
     setState(() {
@@ -335,6 +434,17 @@ class _PlayScreenState extends State<PlayScreen> {
                                         style: const TextStyle(fontSize: 8),
                                       ),
                                     ],
+                                    if (widget.board
+                                            .outgoingSquares(square.id)
+                                            .length >
+                                        1)
+                                      const Text(
+                                        '分岐',
+                                        style: TextStyle(
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../domain/board.dart';
@@ -14,7 +16,8 @@ class BoardConnectionPainter extends CustomPainter {
     final paint = Paint()
       ..color = Colors.blueGrey.shade400
       ..strokeWidth = 5
-      ..strokeCap = StrokeCap.round;
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
     final byId = <String, BoardSquare>{
       for (final square in board.squares) square.id: square,
     };
@@ -32,7 +35,29 @@ class BoardConnectionPainter extends CustomPainter {
         to.position.x + squareSize / 2,
         to.position.y + squareSize / 2,
       );
-      canvas.drawLine(fromCenter, toCenter, paint);
+      final delta = toCenter - fromCenter;
+      if (delta.distance == 0) continue;
+
+      final unit = delta / delta.distance;
+      final lineStart = fromCenter + unit * (squareSize / 2 - 4);
+      final lineEnd = toCenter - unit * (squareSize / 2 + 3);
+      canvas.drawLine(lineStart, lineEnd, paint);
+
+      final angle = math.atan2(delta.dy, delta.dx);
+      const arrowLength = 13.0;
+      const spread = math.pi / 6;
+      final left = lineEnd -
+          Offset(
+            math.cos(angle - spread) * arrowLength,
+            math.sin(angle - spread) * arrowLength,
+          );
+      final right = lineEnd -
+          Offset(
+            math.cos(angle + spread) * arrowLength,
+            math.sin(angle + spread) * arrowLength,
+          );
+      canvas.drawLine(lineEnd, left, paint);
+      canvas.drawLine(lineEnd, right, paint);
     }
   }
 

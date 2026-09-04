@@ -13,6 +13,17 @@ enum _EffectPreset {
   moveToStart,
   skipTurn,
   rollAgain,
+  warpTo,
+}
+
+class _SquareEditResult {
+  const _SquareEditResult({
+    required this.square,
+    required this.outgoingSquareIds,
+  });
+
+  final BoardSquare square;
+  final Set<String> outgoingSquareIds;
 }
 
 class CourseEditorScreen extends StatefulWidget {
@@ -61,6 +72,16 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     ];
   }
 
+  bool _isSimpleLinear(Board board) {
+    if (board.squares.length < 2) return true;
+    if (board.connections.length != board.squares.length - 1) return false;
+    for (final square in board.squares) {
+      if (board.outgoingSquares(square.id).length > 1) return false;
+      if (board.incomingSquares(square.id).length > 1) return false;
+    }
+    return board.orderedPath().length == board.squares.length;
+  }
+
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -79,6 +100,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       return;
     }
 
+    final wasLinear = _isSimpleLinear(_board);
     final normalCount = _board.squares
         .where((square) => square.kind == SquareKind.normal)
         .length;
@@ -114,9 +136,14 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     setState(() {
       _board = _board.copyWith(
         squares: squares,
-        connections: _connectionsFor(squares),
+        connections: wasLinear
+            ? _connectionsFor(squares)
+            : List<BoardConnection>.of(_board.connections),
       );
     });
+    if (!wasLinear) {
+      _showMessage('マスを追加しました。タップして接続先を設定してください。');
+    }
   }
 
   void _moveSquare(BoardSquare square, Offset delta) {
@@ -159,14 +186,53 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    final squares = _board.squares
+    final wasLinear = _isSimpleLinear(_board);
+    var squares = _board.squares
         .where((item) => item.id != square.id)
+        .map(
+          (item) => item.copyWith(
+            effects: item.effects.where((effect) {
+              if (effect.actionType != EffectActionType.warpTo) return true;
+              return effect.parameters['targetSquareId'] != square.id;
+            }).toList(growable: false),
+          ),
+        )
         .toList(growable: false);
+
+    List<BoardConnection> connections;
+    if (wasLinear) {
+      connections = _connectionsFor(squares);
+    } else {
+      final incoming = _board.connections
+          .where((item) => item.toSquareId == square.id)
+          .toList(growable: false);
+      final outgoing = _board.connections
+          .where((item) => item.fromSquareId == square.id)
+          .toList(growable: false);
+      connections = _board.connections
+          .where(
+            (item) =>
+                item.fromSquareId != square.id && item.toSquareId != square.id,
+          )
+          .toList();
+      if (incoming.length == 1 && outgoing.length == 1) {
+        final bridge = BoardConnection(
+          fromSquareId: incoming.single.fromSquareId,
+          toSquareId: outgoing.single.toSquareId,
+        );
+        final exists = connections.any(
+          (item) =>
+              item.fromSquareId == bridge.fromSquareId &&
+              item.toSquareId == bridge.toSquareId,
+        );
+        if (!exists && bridge.fromSquareId != bridge.toSquareId) {
+          connections.add(bridge);
+        }
+      }
+    }
+
     setState(() {
-      _board = _board.copyWith(
-        squares: squares,
-        connections: _connectionsFor(squares),
-      );
+      _board = _board.copyWith(squares: squares, connections: connections);
     });
   }
 
@@ -187,7 +253,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       case EffectActionType.rollAgain:
         return _EffectPreset.rollAgain;
       case EffectActionType.warpTo:
-        return _EffectPreset.none;
+        return _EffectPreset.warpTo;
     }
   }
 
@@ -200,7 +266,20 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     return 1;
   }
 
-  List<SquareEffect> _effectsFor(_EffectPreset preset, int amount) {
+  String? _warpTargetFor(BoardSquare square) {
+    for (final effect in square.effects) {
+      if (effect.actionType != EffectActionType.warpTo) continue;
+      final target = effect.parameters['targetSquareId'];
+      if (target is String) return target;
+    }
+    return null;
+  }
+
+  List<SquareEffect> _effectsFor(
+    _EffectPreset preset,
+    int amount,
+    String? warpTargetId,
+  ) {
     final safeAmount = amount < 1 ? 1 : amount;
     switch (preset) {
       case _EffectPreset.none:
@@ -243,6 +322,15 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
             actionType: EffectActionType.rollAgain,
           ),
         ];
+      case _EffectPreset.warpTo:
+        if (warpTargetId == null) return const <SquareEffect>[];
+        return [
+          SquareEffect(
+            trigger: EffectTrigger.onLand,
+            actionType: EffectActionType.warpTo,
+            parameters: {'targetSquareId': warpTargetId},
+          ),
+        ];
     }
   }
 
@@ -260,6 +348,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return '1回休み';
       case _EffectPreset.rollAgain:
         return 'もう一度サイコロを振る';
+      case _EffectPreset.warpTo:
+        return '指定マスへワープ';
     }
   }
 
@@ -269,8 +359,16 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       text: _amountFor(square).toString(),
     );
     var preset = _presetFor(square);
+    var warpTargetId = _warpTargetFor(square);
+    final selectedOutgoingIds = _board
+        .outgoingSquares(square.id)
+        .map((item) => item.id)
+        .toSet();
+    final candidates = _board.squares
+        .where((item) => item.id != square.id)
+        .toList(growable: false);
 
-    final updated = await showModalBottomSheet<BoardSquare>(
+    final updated = await showModalBottomSheet<_SquareEditResult>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -279,6 +377,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           builder: (context, setModalState) {
             final needsAmount = preset == _EffectPreset.moveForward ||
                 preset == _EffectPreset.moveBackward;
+            final needsWarpTarget = preset == _EffectPreset.warpTo;
             return Padding(
               padding: EdgeInsets.fromLTRB(
                 20,
@@ -321,7 +420,14 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                             .toList(growable: false),
                         onChanged: (value) {
                           if (value == null) return;
-                          setModalState(() => preset = value);
+                          setModalState(() {
+                            preset = value;
+                            if (preset == _EffectPreset.warpTo &&
+                                warpTargetId == null &&
+                                candidates.isNotEmpty) {
+                              warpTargetId = candidates.first.id;
+                            }
+                          });
                         },
                       ),
                       if (needsAmount) ...[
@@ -336,6 +442,67 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                           ),
                         ),
                       ],
+                      if (needsWarpTarget) ...[
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          initialValue: candidates.any(
+                            (item) => item.id == warpTargetId,
+                          )
+                              ? warpTargetId
+                              : null,
+                          decoration: const InputDecoration(
+                            labelText: 'ワープ先',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: candidates
+                              .map(
+                                (item) => DropdownMenuItem(
+                                  value: item.id,
+                                  child: Text(item.label),
+                                ),
+                              )
+                              .toList(growable: false),
+                          onChanged: (value) {
+                            setModalState(() => warpTargetId = value);
+                          },
+                        ),
+                      ],
+                    ],
+                    if (square.kind != SquareKind.goal) ...[
+                      const SizedBox(height: 22),
+                      Text(
+                        'このマスから進める先',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '2つ以上選ぶと分岐になります。',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                      if (candidates.isEmpty)
+                        const Text('接続できるマスがありません。')
+                      else
+                        ...candidates.map(
+                          (candidate) => CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                            title: Text(candidate.label),
+                            subtitle: candidate.kind == SquareKind.goal
+                                ? const Text('ゴール')
+                                : null,
+                            value: selectedOutgoingIds.contains(candidate.id),
+                            onChanged: (checked) {
+                              setModalState(() {
+                                if (checked == true) {
+                                  selectedOutgoingIds.add(candidate.id);
+                                } else {
+                                  selectedOutgoingIds.remove(candidate.id);
+                                }
+                              });
+                            },
+                          ),
+                        ),
                     ],
                     const SizedBox(height: 20),
                     Row(
@@ -353,11 +520,20 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                                 int.tryParse(amountController.text.trim()) ?? 1;
                             Navigator.pop(
                               sheetContext,
-                              square.copyWith(
-                                label: label.isEmpty ? square.label : label,
-                                effects: square.kind == SquareKind.normal
-                                    ? _effectsFor(preset, amount)
-                                    : square.effects,
+                              _SquareEditResult(
+                                square: square.copyWith(
+                                  label: label.isEmpty ? square.label : label,
+                                  effects: square.kind == SquareKind.normal
+                                      ? _effectsFor(
+                                          preset,
+                                          amount,
+                                          warpTargetId,
+                                        )
+                                      : square.effects,
+                                ),
+                                outgoingSquareIds: square.kind == SquareKind.goal
+                                    ? const <String>{}
+                                    : Set<String>.of(selectedOutgoingIds),
                               ),
                             );
                           },
@@ -378,11 +554,21 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     amountController.dispose();
     if (updated == null || !mounted) return;
 
+    final connections = _board.connections
+        .where((item) => item.fromSquareId != square.id)
+        .toList();
+    for (final targetId in updated.outgoingSquareIds) {
+      connections.add(
+        BoardConnection(fromSquareId: square.id, toSquareId: targetId),
+      );
+    }
+
     setState(() {
       _board = _board.copyWith(
         squares: _board.squares
-            .map((item) => item.id == updated.id ? updated : item)
+            .map((item) => item.id == updated.square.id ? updated.square : item)
             .toList(growable: false),
+        connections: connections,
       );
     });
   }
@@ -399,8 +585,12 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     try {
       await widget.repository.saveBoard(board);
       if (!mounted) return;
-      _board = board;
-      _showMessage('保存しました。');
+      setState(() => _board = board);
+      _showMessage(
+        board.isPlayable
+            ? '保存しました。'
+            : '保存しました。スタートからゴールまでの接続を確認してください。',
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -430,6 +620,10 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final hasBranch = _board.squares.any(
+      (square) => _board.outgoingSquares(square.id).length > 1,
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('コース編集'),
@@ -450,12 +644,26 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'コース名',
-                border: OutlineInputBorder(),
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'コース名',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Chip(
+                  avatar: Icon(
+                    hasBranch ? Icons.call_split : Icons.route,
+                    size: 18,
+                  ),
+                  label: Text(hasBranch ? '分岐あり' : '一本道'),
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -519,6 +727,17 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                                           style: const TextStyle(fontSize: 8),
                                         ),
                                       ],
+                                      if (_board.outgoingSquares(square.id).length >
+                                          1) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '分岐 ${_board.outgoingSquares(square.id).length}',
+                                          style: const TextStyle(
+                                            fontSize: 8,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
                                     ],
                                   ),
                                 ),
@@ -536,30 +755,38 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
             elevation: 8,
             child: SafeArea(
               top: false,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                child: Row(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    FilledButton.tonalIcon(
-                      onPressed: () => _addSquare(SquareKind.start),
-                      icon: const Icon(Icons.flag_outlined),
-                      label: const Text('スタート'),
+                    const Text(
+                      'マスをタップ: 設定・接続 / ドラッグ: 移動 / 長押し: 削除',
+                      style: TextStyle(fontSize: 12),
                     ),
-                    const SizedBox(width: 8),
-                    FilledButton.tonalIcon(
-                      onPressed: () => _addSquare(SquareKind.normal),
-                      icon: const Icon(Icons.add_box_outlined),
-                      label: const Text('通常マス'),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        FilledButton.tonalIcon(
+                          onPressed: () => _addSquare(SquareKind.start),
+                          icon: const Icon(Icons.flag_outlined),
+                          label: const Text('スタート'),
+                        ),
+                        FilledButton.tonalIcon(
+                          onPressed: () => _addSquare(SquareKind.normal),
+                          icon: const Icon(Icons.add_box_outlined),
+                          label: const Text('通常マス'),
+                        ),
+                        FilledButton.tonalIcon(
+                          onPressed: () => _addSquare(SquareKind.goal),
+                          icon: const Icon(Icons.sports_score_outlined),
+                          label: const Text('ゴール'),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    FilledButton.tonalIcon(
-                      onPressed: () => _addSquare(SquareKind.goal),
-                      icon: const Icon(Icons.sports_score_outlined),
-                      label: const Text('ゴール'),
-                    ),
-                    const SizedBox(width: 16),
-                    const Text('タップ: 設定 / ドラッグ: 移動 / 長押し: 削除'),
                   ],
                 ),
               ),

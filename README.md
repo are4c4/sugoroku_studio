@@ -4,7 +4,7 @@ A customizable sugoroku board game maker built with Flutter.
 
 ## Current MVP
 
-Issue #1 の v0.1〜v0.3 を基準に、コースを作成し、人間やCPUと実際に遊べる縦スライスを実装しています。
+Issue #1 の v0.1〜v0.4 を基準に、コースを作成し、人間やCPUと実際に遊べる縦スライスを実装しています。
 
 - コース一覧
 - 新規コース作成
@@ -12,13 +12,17 @@ Issue #1 の v0.1〜v0.3 を基準に、コースを作成し、人間やCPUと�
 - スタート／通常／ゴールマスの追加
 - マスのドラッグによる自由配置
 - 通常マスのタップ編集
-- 一本道の接続
+- マスごとの接続先編集
+- 一本道／分岐コース
+- 接続方向の矢印表示
 - コースのローカルJSON保存・読込・削除
 - 1人プレイ
 - ローカル複数人プレイ
 - 人間 + CPU の混在プレイ
 - CPUターンの自動実行
 - プレイヤー名・人間/CPU設定
+- 人間プレイヤーの分岐ルート選択
+- CPUのゴールまでの最短経路選択
 - 1〜6のサイコロ
 - サイコロロール演出
 - 1マスずつの駒移動アニメーション
@@ -30,7 +34,9 @@ Issue #1 の v0.1〜v0.3 を基準に、コースを作成し、人間やCPUと�
 - スタートに戻る
 - 1回休み
 - もう一度サイコロを振る
+- 指定マスへのワープ
 - 効果による移動先の特殊マスを続けて解決
+- 分岐後の「戻る」で実際に通ったルートを逆走
 - Board / Square / Connection / Effect の分離
 - GameEngine / GameEvent とUIの分離
 - Human / CPU 共通 Player モデル
@@ -47,6 +53,7 @@ lib/
 ├─ domain/
 │  ├─ board.dart
 │  ├─ player.dart
+│  ├─ cpu_strategy.dart
 │  ├─ game_state.dart
 │  ├─ game_event.dart
 │  └─ game_engine.dart
@@ -63,7 +70,9 @@ lib/
 
 画面上の座標 (`BoardPosition`) とゲーム上の経路 (`BoardConnection`) は別データです。マス効果 (`SquareEffect`) もマス本体から分離しています。
 
-特殊マスは `GameEngine` が `SquareEffect` を解決し、移動や効果発動を `GameEvent` として発行します。プレイ画面は `GameEvent` を順番に再生して、サイコロ、駒移動、特殊マス、ゴールの演出を行います。ゲームルールと演出を分けることで、今後SE/BGMや分岐コースを追加してもルールをUIへ埋め込まずに拡張できます。
+`Board` は複数の outgoing connection を持つグラフとして扱います。`GameEngine` は分岐点で `RouteSelector` を呼び出し、人間プレイヤーはUIで進路を選択し、CPUは `ShortestPathCpuStrategy` でゴールまでの最短ルートを選びます。プレイヤーには実際に通った `routeHistory` を保持するため、分岐後の「Nマス戻る」も選んだ経路を正しく逆走できます。
+
+特殊マスは `GameEngine` が `SquareEffect` を解決し、移動や効果発動を `GameEvent` として発行します。プレイ画面は `GameEvent` を順番に再生して、サイコロ、駒移動、分岐、特殊マス、ゴールの演出を行います。ゲームルールと演出を分けることで、今後SE/BGMやより高度なCPU戦略を追加してもルールをUIへ埋め込まずに拡張できます。
 
 ローカル保存は `CourseRepository` を境界にしています。現在の `LocalCourseRepository` は構造化JSONをアプリのドキュメント領域へ保存します。SQLite/Drift等へ移行する場合もUIから永続化実装を切り離せます。
 
@@ -98,4 +107,4 @@ flutter test
 
 設計の基準は [Issue #1](https://github.com/are4c4/sugoroku_studio/issues/1) です。
 
-v0.1 のコース作成・基本プレイ、v0.2 の基本特殊マス、v0.3 のプレイヤー設定・CPU・ローカル複数人・基本アニメーションまで実装済みです。次の大きな候補は v0.4 の分岐コース、ワープ、CPUの経路選択です。
+v0.1 のコース作成・基本プレイ、v0.2 の基本特殊マス、v0.3 のプレイヤー設定・CPU・ローカル複数人・基本アニメーション、v0.4 の分岐コース・ワープ・CPU経路選択まで実装済みです。
