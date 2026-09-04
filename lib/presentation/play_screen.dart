@@ -93,6 +93,8 @@ class _PlayScreenState extends State<PlayScreen> {
             orElse: () => actingPlayer,
           );
           return '${actingPlayer.name}: 🎒 ${finalPlayer.totalItems}個所持';
+        case EffectActionType.randomEvent:
+          return '${actingPlayer.name}: 🎰 ランダムイベント！';
       }
     }
     return '次は${result.state.currentPlayer.name}のターンです';
@@ -218,6 +220,21 @@ class _PlayScreenState extends State<PlayScreen> {
     });
   }
 
+  String _randomOutcomeMessage(RandomEventOption option) {
+    switch (option.outcomeType) {
+      case RandomEventOutcomeType.showMessage:
+        final rawMessage = option.parameters['message'];
+        final message = rawMessage is String ? rawMessage.trim() : '';
+        return message.isEmpty
+            ? '🎰 ${option.label}'
+            : '🎰 ${option.label}：$message';
+      case RandomEventOutcomeType.changePoints:
+        return '🎰 ${option.label}';
+      case RandomEventOutcomeType.grantItem:
+        return '🎰 ${option.label}';
+    }
+  }
+
   Future<void> _playEvents(
     GameTurnResult result,
     Player actingPlayer, {
@@ -275,12 +292,24 @@ class _PlayScreenState extends State<PlayScreen> {
             event.effect.actionType == EffectActionType.grantItem) {
           continue;
         }
+        if (event.effect.actionType == EffectActionType.randomEvent) {
+          await _showEffect(event.squareId, '🎰 ランダムイベントを抽選中…');
+          continue;
+        }
         final message = effectMessage(event.effect);
         await _showEffect(
           event.squareId,
           event.effect.actionType == EffectActionType.showMessage
               ? '💬 ${message.isEmpty ? 'メッセージ' : message}'
               : '✨ ${effectDescription(event.effect)}',
+        );
+        continue;
+      }
+
+      if (event is RandomEventChosen) {
+        await _showEffect(
+          event.squareId,
+          _randomOutcomeMessage(event.option),
         );
         continue;
       }
@@ -395,6 +424,8 @@ class _PlayScreenState extends State<PlayScreen> {
         return Colors.yellow.shade300;
       case EffectActionType.grantItem:
         return Colors.lightGreen.shade300;
+      case EffectActionType.randomEvent:
+        return Colors.pink.shade200;
     }
   }
 
