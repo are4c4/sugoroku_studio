@@ -15,11 +15,15 @@ class PlayerSetupScreen extends StatefulWidget {
 }
 
 class _PlayerDraft {
-  _PlayerDraft({required String name, required this.type})
-      : controller = TextEditingController(text: name);
+  _PlayerDraft({
+    required String name,
+    required this.type,
+    this.cpuStrategy = CpuStrategyType.shortestPath,
+  }) : controller = TextEditingController(text: name);
 
   final TextEditingController controller;
   PlayerType type;
+  CpuStrategyType cpuStrategy;
 
   void dispose() => controller.dispose();
 }
@@ -68,6 +72,7 @@ class _PlayerSetupScreenState extends State<PlayerSetupScreen> {
               : _players[index].controller.text.trim(),
           type: _players[index].type,
           currentSquareId: '',
+          cpuStrategy: _players[index].cpuStrategy,
         ),
     ];
 
@@ -89,6 +94,22 @@ class _PlayerSetupScreenState extends State<PlayerSetupScreen> {
     return switch (type) {
       PlayerType.human => Icons.person_outline,
       PlayerType.cpu => Icons.smart_toy_outlined,
+    };
+  }
+
+  String _strategyLabel(CpuStrategyType strategy) {
+    return switch (strategy) {
+      CpuStrategyType.shortestPath => '最短ルート',
+      CpuStrategyType.cautious => '安全重視',
+      CpuStrategyType.rewardSeeking => '報酬重視',
+    };
+  }
+
+  String _strategyDescription(CpuStrategyType strategy) {
+    return switch (strategy) {
+      CpuStrategyType.shortestPath => 'ゴールまでの残りマス数を最優先します。',
+      CpuStrategyType.cautious => '休み・後退・ポイント損失などの危険を避けます。',
+      CpuStrategyType.rewardSeeking => 'ポイント・アイテム・再ロールなどの報酬を狙います。',
     };
   }
 
@@ -154,6 +175,40 @@ class _PlayerSetupScreenState extends State<PlayerSetupScreen> {
                                       setState(() => _players[index].type = type);
                                     },
                                   ),
+                                  if (_players[index].type == PlayerType.cpu) ...[
+                                    const SizedBox(height: 10),
+                                    DropdownButtonFormField<CpuStrategyType>(
+                                      initialValue: _players[index].cpuStrategy,
+                                      decoration: const InputDecoration(
+                                        labelText: 'CPU Strategy',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      items: [
+                                        for (final strategy
+                                            in CpuStrategyType.values)
+                                          DropdownMenuItem(
+                                            value: strategy,
+                                            child: Text(_strategyLabel(strategy)),
+                                          ),
+                                      ],
+                                      onChanged: (strategy) {
+                                        if (strategy == null) return;
+                                        setState(
+                                          () => _players[index].cpuStrategy = strategy,
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        _strategyDescription(
+                                          _players[index].cpuStrategy,
+                                        ),
+                                        style: Theme.of(context).textTheme.bodySmall,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
