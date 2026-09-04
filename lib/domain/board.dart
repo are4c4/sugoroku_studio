@@ -20,6 +20,7 @@ enum EffectActionType {
   showMessage,
   changePoints,
   grantItem,
+  consumeItem,
   randomEvent,
 }
 
