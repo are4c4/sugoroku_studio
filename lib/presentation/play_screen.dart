@@ -29,7 +29,6 @@ class _PlayScreenState extends State<PlayScreen> {
   static const double _squareSize = BoardConnectionPainter.squareSize;
 
   late final GameEngine _engine;
-  late final CpuStrategy _cpuStrategy;
   late GameState _state;
   late Map<String, String> _displaySquareIds;
   bool _rolling = false;
@@ -45,7 +44,6 @@ class _PlayScreenState extends State<PlayScreen> {
   void initState() {
     super.initState();
     _engine = GameEngine();
-    _cpuStrategy = const ShortestPathCpuStrategy();
     _state = _engine.createGame(board: widget.board, players: widget.players);
     _displaySquareIds = {
       for (final player in _state.players) player.id: player.currentSquareId,
@@ -106,6 +104,14 @@ class _PlayScreenState extends State<PlayScreen> {
     return 'ゴールまで最短 $distance マス';
   }
 
+  String _cpuStrategyLabel(CpuStrategyType strategy) {
+    return switch (strategy) {
+      CpuStrategyType.shortestPath => '最短',
+      CpuStrategyType.cautious => '安全',
+      CpuStrategyType.rewardSeeking => '報酬',
+    };
+  }
+
   void _scheduleCpuTurn() {
     if (!mounted ||
         _rolling ||
@@ -131,7 +137,8 @@ class _PlayScreenState extends State<PlayScreen> {
 
   Future<String> _selectRoute(RouteChoiceContext choice) async {
     if (choice.player.type == PlayerType.cpu) {
-      return _cpuStrategy.chooseNextSquare(
+      final strategy = cpuStrategyFor(choice.player.cpuStrategy);
+      return strategy.chooseNextSquare(
         board: choice.board,
         player: choice.player,
         from: choice.fromSquare,
@@ -630,7 +637,7 @@ class _PlayScreenState extends State<PlayScreen> {
                                 ),
                               ),
                               label: Text(
-                                '${_state.players[index].name}${_state.players[index].type == PlayerType.cpu ? ' (CPU)' : ''} · ★ ${_state.players[index].points}pt · 🎒 ${_state.players[index].totalItems}',
+                                '${_state.players[index].name}${_state.players[index].type == PlayerType.cpu ? ' (CPU・${_cpuStrategyLabel(_state.players[index].cpuStrategy)})' : ''} · ★ ${_state.players[index].points}pt · 🎒 ${_state.players[index].totalItems}',
                               ),
                               backgroundColor:
                                   index == _state.currentPlayerIndex
