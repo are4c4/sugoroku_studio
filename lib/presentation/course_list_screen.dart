@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/id.dart';
 import '../data/course_repository.dart';
 import '../domain/board.dart';
+import '../domain/board_duplicate.dart';
 import 'course_editor_screen.dart';
 import 'item_definition_editor.dart';
 import 'player_setup_screen.dart';
@@ -131,6 +132,21 @@ class _CourseListScreenState extends State<CourseListScreen> {
     setState(_reload);
   }
 
+  Future<void> _duplicateBoard(Board board) async {
+    final duplicated = duplicateBoard(
+      board,
+      newBoardId: createId('board'),
+      newName: '${board.name} のコピー',
+      updatedAt: DateTime.now(),
+    );
+    await widget.repository.saveBoard(duplicated);
+    if (!mounted) return;
+    setState(_reload);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('「${duplicated.name}」を作成しました。')),
+    );
+  }
+
   Future<void> _deleteBoard(Board board) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -252,6 +268,7 @@ class _CourseListScreenState extends State<CourseListScreen> {
                         PopupMenuButton<String>(
                           onSelected: (value) {
                             if (value == 'edit') _editBoard(board);
+                            if (value == 'duplicate') _duplicateBoard(board);
                             if (value == 'items') _editItemDefinitions(board);
                             if (value == 'delete') _deleteBoard(board);
                           },
@@ -259,6 +276,10 @@ class _CourseListScreenState extends State<CourseListScreen> {
                             PopupMenuItem(
                               value: 'edit',
                               child: Text('編集'),
+                            ),
+                            PopupMenuItem(
+                              value: 'duplicate',
+                              child: Text('複製'),
                             ),
                             PopupMenuItem(
                               value: 'items',
