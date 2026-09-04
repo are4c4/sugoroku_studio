@@ -115,6 +115,7 @@ class GameEngine {
     final events = <GameEvent>[DiceRolled(rolledDice)];
     var currentSquareId = currentPlayer.currentSquareId;
     var currentPoints = currentPlayer.points;
+    var currentInventory = Map<String, int>.of(currentPlayer.inventory);
     var routeHistory = List<String>.of(currentPlayer.routeHistory);
     if (routeHistory.isEmpty || routeHistory.last != currentSquareId) {
       routeHistory = <String>[currentSquareId];
@@ -164,6 +165,7 @@ class GameEngine {
               player: currentPlayer.copyWith(
                 currentSquareId: currentSquareId,
                 points: currentPoints,
+                inventory: Map<String, int>.unmodifiable(currentInventory),
                 routeHistory: List<String>.unmodifiable(routeHistory),
               ),
               fromSquare: from,
@@ -313,6 +315,23 @@ class GameEngine {
                 points: currentPoints,
               ),
             );
+          case EffectActionType.grantItem:
+            final rawItemName = effect.parameters['itemName'];
+            final itemName = rawItemName is String ? rawItemName.trim() : '';
+            final rawQuantity = effect.parameters['quantity'];
+            final parsedQuantity = rawQuantity is num ? rawQuantity.toInt() : 1;
+            final quantity = parsedQuantity < 1 ? 1 : parsedQuantity;
+            if (itemName.isEmpty) break;
+            final totalQuantity = (currentInventory[itemName] ?? 0) + quantity;
+            currentInventory[itemName] = totalQuantity;
+            events.add(
+              PlayerItemGranted(
+                playerId: currentPlayer.id,
+                itemName: itemName,
+                quantity: quantity,
+                totalQuantity: totalQuantity,
+              ),
+            );
         }
       }
 
@@ -328,6 +347,7 @@ class GameEngine {
       currentSquareId: destination.id,
       skipTurns: currentPlayer.skipTurns + skipTurnsToAdd,
       points: currentPoints,
+      inventory: Map<String, int>.unmodifiable(currentInventory),
       routeHistory: List<String>.unmodifiable(routeHistory),
     );
     players[state.currentPlayerIndex] = updatedPlayer;
