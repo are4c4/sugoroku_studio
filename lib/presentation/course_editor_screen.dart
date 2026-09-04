@@ -4,6 +4,7 @@ import '../core/id.dart';
 import '../data/course_repository.dart';
 import '../domain/board.dart';
 import 'effect_text.dart';
+import 'random_event_editor.dart';
 import 'widgets/board_painter.dart';
 
 enum _EffectPreset {
@@ -17,6 +18,7 @@ enum _EffectPreset {
   showMessage,
   changePoints,
   grantItem,
+  randomEvent,
 }
 
 enum _ConditionPreset {
@@ -263,6 +265,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return _EffectPreset.changePoints;
       case EffectActionType.grantItem:
         return _EffectPreset.grantItem;
+      case EffectActionType.randomEvent:
+        return _EffectPreset.randomEvent;
     }
   }
 
@@ -343,6 +347,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     required String? warpTargetId,
     required String message,
     required String itemName,
+    required List<RandomEventOption> randomOptions,
   }) {
     final safeAmount = amount < 1 ? 1 : amount;
     switch (preset) {
@@ -414,6 +419,16 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           parameters: {'itemName': name, 'quantity': safeAmount},
           condition: condition,
         );
+      case _EffectPreset.randomEvent:
+        if (randomOptions.length < 2) return null;
+        return SquareEffect(
+          trigger: trigger,
+          actionType: EffectActionType.randomEvent,
+          parameters: {
+            'options': randomOptions.map((option) => option.toJson()).toList(),
+          },
+          condition: condition,
+        );
     }
   }
 
@@ -439,6 +454,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return 'ポイントを増減';
       case _EffectPreset.grantItem:
         return 'アイテムを付与';
+      case _EffectPreset.randomEvent:
+        return 'ランダムイベント';
     }
   }
 
@@ -454,6 +471,9 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       preset = _EffectPreset.showMessage;
     }
     var conditionPreset = _conditionPresetFor(initialEffect?.condition);
+    var randomOptions = List<RandomEventOption>.of(
+      initialEffect?.randomEventOptions ?? const <RandomEventOption>[],
+    );
 
     final amountController = TextEditingController(
       text: initialEffect == null
@@ -490,6 +510,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
             final needsWarpTarget = preset == _EffectPreset.warpTo;
             final needsMessage = preset == _EffectPreset.showMessage;
             final needsItemName = preset == _EffectPreset.grantItem;
+            final needsRandomOptions = preset == _EffectPreset.randomEvent;
             final needsConditionPoints = conditionPreset != _ConditionPreset.none;
             final availablePresets = trigger == EffectTrigger.onPass
                 ? const [_EffectPreset.showMessage]
@@ -666,6 +687,34 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                           ),
                         ),
                       ],
+                      if (needsRandomOptions) ...[
+                        const SizedBox(height: 14),
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final edited = await showRandomEventOptionsEditor(
+                              context,
+                              initialOptions: randomOptions,
+                            );
+                            if (edited != null && context.mounted) {
+                              setDialogState(
+                                () => randomOptions = List<RandomEventOption>.of(edited),
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.casino_outlined),
+                          label: Text('候補を編集（${randomOptions.length}個）'),
+                        ),
+                        const SizedBox(height: 6),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            randomOptions.length < 2
+                                ? '2つ以上の候補を設定してください。'
+                                : '各候補は同じ確率で選ばれます。',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
                       if (trigger == EffectTrigger.onPass) ...[
                         const SizedBox(height: 10),
                         const Align(
@@ -686,27 +735,32 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                   child: const Text('キャンセル'),
                 ),
                 FilledButton(
-                  onPressed: () {
-                    final amount =
-                        int.tryParse(amountController.text.trim()) ?? 1;
-                    final conditionPoints =
-                        int.tryParse(conditionPointsController.text.trim()) ?? 0;
-                    final effect = _effectFor(
-                      preset: preset,
-                      trigger: trigger,
-                      condition: _conditionFor(
-                        conditionPreset,
-                        conditionPoints,
-                      ),
-                      amount: amount,
-                      warpTargetId: warpTargetId,
-                      message: messageController.text,
-                      itemName: itemNameController.text,
-                    );
-                    if (effect != null) {
-                      Navigator.pop(dialogContext, effect);
-                    }
-                  },
+                  onPressed: needsRandomOptions && randomOptions.length < 2
+                      ? null
+                      : () {
+                          final amount =
+                              int.tryParse(amountController.text.trim()) ?? 1;
+                          final conditionPoints = int.tryParse(
+                                conditionPointsController.text.trim(),
+                              ) ??
+                              0;
+                          final effect = _effectFor(
+                            preset: preset,
+                            trigger: trigger,
+                            condition: _conditionFor(
+                              conditionPreset,
+                              conditionPoints,
+                            ),
+                            amount: amount,
+                            warpTargetId: warpTargetId,
+                            message: messageController.text,
+                            itemName: itemNameController.text,
+                            randomOptions: randomOptions,
+                          );
+                          if (effect != null) {
+                            Navigator.pop(dialogContext, effect);
+                          }
+                        },
                   child: const Text('適用'),
                 ),
               ],
@@ -1077,6 +1131,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return Colors.yellow.shade300;
       case EffectActionType.grantItem:
         return Colors.lightGreen.shade300;
+      case EffectActionType.randomEvent:
+        return Colors.pink.shade200;
     }
   }
 

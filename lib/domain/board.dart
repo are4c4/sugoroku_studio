@@ -4,6 +4,8 @@ enum EffectTrigger { onLand, onPass }
 
 enum EffectConditionType { pointsAtLeast, pointsAtMost }
 
+enum RandomEventOutcomeType { showMessage, changePoints, grantItem }
+
 enum EffectActionType {
   moveBy,
   moveToStart,
@@ -13,6 +15,7 @@ enum EffectActionType {
   showMessage,
   changePoints,
   grantItem,
+  randomEvent,
 }
 
 class BoardPosition {
@@ -57,6 +60,36 @@ class EffectCondition {
   }
 }
 
+class RandomEventOption {
+  const RandomEventOption({
+    required this.label,
+    required this.outcomeType,
+    this.parameters = const <String, dynamic>{},
+  });
+
+  final String label;
+  final RandomEventOutcomeType outcomeType;
+  final Map<String, dynamic> parameters;
+
+  Map<String, dynamic> toJson() => {
+        'label': label,
+        'outcomeType': outcomeType.name,
+        'parameters': parameters,
+      };
+
+  factory RandomEventOption.fromJson(Map<String, dynamic> json) {
+    return RandomEventOption(
+      label: json['label'] as String? ?? '',
+      outcomeType: RandomEventOutcomeType.values.byName(
+        json['outcomeType'] as String? ?? RandomEventOutcomeType.showMessage.name,
+      ),
+      parameters: Map<String, dynamic>.from(
+        json['parameters'] as Map? ?? const <String, dynamic>{},
+      ),
+    );
+  }
+}
+
 class SquareEffect {
   const SquareEffect({
     required this.trigger,
@@ -69,6 +102,19 @@ class SquareEffect {
   final EffectActionType actionType;
   final Map<String, dynamic> parameters;
   final EffectCondition? condition;
+
+  List<RandomEventOption> get randomEventOptions {
+    final rawOptions = parameters['options'];
+    if (rawOptions is! List) return const <RandomEventOption>[];
+    return rawOptions
+        .whereType<Map>()
+        .map(
+          (option) => RandomEventOption.fromJson(
+            Map<String, dynamic>.from(option),
+          ),
+        )
+        .toList(growable: false);
+  }
 
   Map<String, dynamic> toJson() => {
         'trigger': trigger.name,

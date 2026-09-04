@@ -133,6 +133,33 @@ class GameEngine {
       }
     }
 
+    void changePoints(int delta) {
+      currentPoints += delta;
+      events.add(
+        PlayerPointsChanged(
+          playerId: currentPlayer.id,
+          delta: delta,
+          points: currentPoints,
+        ),
+      );
+    }
+
+    void grantItem(String rawName, int rawQuantity) {
+      final itemName = rawName.trim();
+      final quantity = rawQuantity < 1 ? 1 : rawQuantity;
+      if (itemName.isEmpty) return;
+      final totalQuantity = (currentInventory[itemName] ?? 0) + quantity;
+      currentInventory[itemName] = totalQuantity;
+      events.add(
+        PlayerItemGranted(
+          playerId: currentPlayer.id,
+          itemName: itemName,
+          quantity: quantity,
+          totalQuantity: totalQuantity,
+        ),
+      );
+    }
+
     void emitPassMessageEffects(BoardSquare square) {
       final passMessages = square.effects
           .where(
@@ -306,32 +333,41 @@ class GameEngine {
             break;
           case EffectActionType.changePoints:
             final rawDelta = effect.parameters['points'];
-            final delta = rawDelta is num ? rawDelta.toInt() : 0;
-            currentPoints += delta;
-            events.add(
-              PlayerPointsChanged(
-                playerId: currentPlayer.id,
-                delta: delta,
-                points: currentPoints,
-              ),
-            );
+            changePoints(rawDelta is num ? rawDelta.toInt() : 0);
           case EffectActionType.grantItem:
             final rawItemName = effect.parameters['itemName'];
-            final itemName = rawItemName is String ? rawItemName.trim() : '';
             final rawQuantity = effect.parameters['quantity'];
-            final parsedQuantity = rawQuantity is num ? rawQuantity.toInt() : 1;
-            final quantity = parsedQuantity < 1 ? 1 : parsedQuantity;
-            if (itemName.isEmpty) break;
-            final totalQuantity = (currentInventory[itemName] ?? 0) + quantity;
-            currentInventory[itemName] = totalQuantity;
+            grantItem(
+              rawItemName is String ? rawItemName : '',
+              rawQuantity is num ? rawQuantity.toInt() : 1,
+            );
+          case EffectActionType.randomEvent:
+            final options = effect.randomEventOptions;
+            if (options.isEmpty) break;
+            final optionIndex = _random.nextInt(options.length);
+            final option = options[optionIndex];
             events.add(
-              PlayerItemGranted(
+              RandomEventChosen(
                 playerId: currentPlayer.id,
-                itemName: itemName,
-                quantity: quantity,
-                totalQuantity: totalQuantity,
+                squareId: activatedSquare.id,
+                optionIndex: optionIndex,
+                option: option,
               ),
             );
+            switch (option.outcomeType) {
+              case RandomEventOutcomeType.showMessage:
+                break;
+              case RandomEventOutcomeType.changePoints:
+                final rawDelta = option.parameters['points'];
+                changePoints(rawDelta is num ? rawDelta.toInt() : 0);
+              case RandomEventOutcomeType.grantItem:
+                final rawItemName = option.parameters['itemName'];
+                final rawQuantity = option.parameters['quantity'];
+                grantItem(
+                  rawItemName is String ? rawItemName : '',
+                  rawQuantity is num ? rawQuantity.toInt() : 1,
+                );
+            }
         }
       }
 
