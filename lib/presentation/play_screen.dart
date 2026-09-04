@@ -81,6 +81,12 @@ class _PlayScreenState extends State<PlayScreen> {
           return '${actingPlayer.name}はもう一度サイコロを振れます！';
         case EffectActionType.showMessage:
           break;
+        case EffectActionType.changePoints:
+          final finalPlayer = result.state.players.firstWhere(
+            (player) => player.id == actingPlayer.id,
+            orElse: () => actingPlayer,
+          );
+          return '${actingPlayer.name}: ★ ${finalPlayer.points}pt';
       }
     }
     return '次は${result.state.currentPlayer.name}のターンです';
@@ -259,12 +265,24 @@ class _PlayScreenState extends State<PlayScreen> {
       }
 
       if (event is SquareEffectApplied) {
+        if (event.effect.actionType == EffectActionType.changePoints) {
+          continue;
+        }
         final message = effectMessage(event.effect);
         await _showEffect(
           event.squareId,
           event.effect.actionType == EffectActionType.showMessage
               ? '💬 ${message.isEmpty ? 'メッセージ' : message}'
               : '✨ ${effectDescription(event.effect)}',
+        );
+        continue;
+      }
+
+      if (event is PlayerPointsChanged) {
+        final sign = event.delta > 0 ? '+' : '';
+        await _showEffect(
+          finalPlayer.currentSquareId,
+          '⭐ $sign${event.delta}pt → ${event.points}pt',
         );
         continue;
       }
@@ -358,6 +376,8 @@ class _PlayScreenState extends State<PlayScreen> {
         return Colors.indigo.shade200;
       case EffectActionType.showMessage:
         return Colors.cyan.shade200;
+      case EffectActionType.changePoints:
+        return Colors.yellow.shade300;
     }
   }
 
@@ -562,7 +582,7 @@ class _PlayScreenState extends State<PlayScreen> {
                                 ),
                               ),
                               label: Text(
-                                '${_state.players[index].name}${_state.players[index].type == PlayerType.cpu ? ' (CPU)' : ''}',
+                                '${_state.players[index].name}${_state.players[index].type == PlayerType.cpu ? ' (CPU)' : ''} · ★ ${_state.players[index].points}pt',
                               ),
                               backgroundColor:
                                   index == _state.currentPlayerIndex

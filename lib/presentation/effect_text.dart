@@ -35,6 +35,12 @@ String effectDescription(SquareEffect effect) {
     case EffectActionType.showMessage:
       final message = effectMessage(effect);
       return message.isEmpty ? 'メッセージを表示' : 'メッセージ「$message」';
+    case EffectActionType.changePoints:
+      final rawPoints = effect.parameters['points'];
+      final points = rawPoints is num ? rawPoints.toInt() : 0;
+      if (points > 0) return '$pointsポイント獲得';
+      if (points < 0) return '${points.abs()}ポイント失う';
+      return 'ポイント変化なし';
   }
 }
 

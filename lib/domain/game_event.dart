@@ -56,6 +56,18 @@ class SquareEffectApplied extends GameEvent {
   final SquareEffect effect;
 }
 
+class PlayerPointsChanged extends GameEvent {
+  const PlayerPointsChanged({
+    required this.playerId,
+    required this.delta,
+    required this.points,
+  });
+
+  final String playerId;
+  final int delta;
+  final int points;
+}
+
 class ExtraRollGranted extends GameEvent {
   const ExtraRollGranted(this.playerId);
 
