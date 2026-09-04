@@ -478,14 +478,13 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     required BuildContext context,
     required SquareEffect effect,
     required int index,
-    required int effectCount,
     required VoidCallback? onMoveUp,
     required VoidCallback? onMoveDown,
     required VoidCallback onEdit,
     required VoidCallback onDelete,
   }) {
     return Card(
-      key: ValueKey('effect-${index}-${effect.actionType.name}'),
+      key: ValueKey('effect-$index-${effect.actionType.name}'),
       margin: const EdgeInsets.only(top: 8),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
@@ -628,7 +627,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                                   context: context,
                                   effect: effects[index],
                                   index: index,
-                                  effectCount: effects.length,
                                   onMoveUp: index == 0
                                       ? null
                                       : () {
