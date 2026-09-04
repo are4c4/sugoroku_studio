@@ -14,6 +14,7 @@ enum _EffectPreset {
   skipTurn,
   rollAgain,
   warpTo,
+  showMessage,
 }
 
 class _SquareEditResult {
@@ -83,9 +84,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _addSquare(SquareKind kind) {
@@ -161,9 +160,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         )
         .toList(growable: false);
 
-    setState(() {
-      _board = _board.copyWith(squares: squares);
-    });
+    setState(() => _board = _board.copyWith(squares: squares));
   }
 
   Future<void> _removeSquare(BoardSquare square) async {
@@ -252,6 +249,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return _EffectPreset.rollAgain;
       case EffectActionType.warpTo:
         return _EffectPreset.warpTo;
+      case EffectActionType.showMessage:
+        return _EffectPreset.showMessage;
     }
   }
 
@@ -273,49 +272,59 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     return target is String ? target : null;
   }
 
-  SquareEffect? _effectFor(
-    _EffectPreset preset,
-    int amount,
-    String? warpTargetId,
-  ) {
+  SquareEffect? _effectFor({
+    required _EffectPreset preset,
+    required EffectTrigger trigger,
+    required int amount,
+    required String? warpTargetId,
+    required String message,
+  }) {
     final safeAmount = amount < 1 ? 1 : amount;
     switch (preset) {
       case _EffectPreset.none:
         return null;
       case _EffectPreset.moveForward:
         return SquareEffect(
-          trigger: EffectTrigger.onLand,
+          trigger: trigger,
           actionType: EffectActionType.moveBy,
           parameters: {'steps': safeAmount},
         );
       case _EffectPreset.moveBackward:
         return SquareEffect(
-          trigger: EffectTrigger.onLand,
+          trigger: trigger,
           actionType: EffectActionType.moveBy,
           parameters: {'steps': -safeAmount},
         );
       case _EffectPreset.moveToStart:
-        return const SquareEffect(
-          trigger: EffectTrigger.onLand,
+        return SquareEffect(
+          trigger: trigger,
           actionType: EffectActionType.moveToStart,
         );
       case _EffectPreset.skipTurn:
         return SquareEffect(
-          trigger: EffectTrigger.onLand,
+          trigger: trigger,
           actionType: EffectActionType.skipTurn,
           parameters: {'turns': safeAmount},
         );
       case _EffectPreset.rollAgain:
-        return const SquareEffect(
-          trigger: EffectTrigger.onLand,
+        return SquareEffect(
+          trigger: trigger,
           actionType: EffectActionType.rollAgain,
         );
       case _EffectPreset.warpTo:
         if (warpTargetId == null) return null;
         return SquareEffect(
-          trigger: EffectTrigger.onLand,
+          trigger: trigger,
           actionType: EffectActionType.warpTo,
           parameters: {'targetSquareId': warpTargetId},
+        );
+      case _EffectPreset.showMessage:
+        final text = message.trim();
+        if (text.isEmpty) return null;
+        return SquareEffect(
+          trigger: trigger,
+          actionType: EffectActionType.showMessage,
+          parameters: {'message': text},
         );
     }
   }
@@ -336,6 +345,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return 'もう一度サイコロを振る';
       case _EffectPreset.warpTo:
         return '指定マスへワープ';
+      case _EffectPreset.showMessage:
+        return 'メッセージを表示';
     }
   }
 
@@ -343,13 +354,21 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     SquareEffect? initialEffect,
     required List<BoardSquare> candidates,
   }) async {
+    var trigger = initialEffect?.trigger ?? EffectTrigger.onLand;
     var preset = initialEffect == null
         ? _EffectPreset.moveForward
         : _presetForEffect(initialEffect);
+    if (trigger == EffectTrigger.onPass && preset != _EffectPreset.showMessage) {
+      preset = _EffectPreset.showMessage;
+    }
+
     final amountController = TextEditingController(
       text: initialEffect == null
           ? '1'
           : _amountForEffect(initialEffect).toString(),
+    );
+    final messageController = TextEditingController(
+      text: initialEffect == null ? '' : effectMessage(initialEffect),
     );
     var warpTargetId = initialEffect == null
         ? (candidates.isEmpty ? null : candidates.first.id)
@@ -368,80 +387,136 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                 preset == _EffectPreset.moveBackward ||
                 preset == _EffectPreset.skipTurn;
             final needsWarpTarget = preset == _EffectPreset.warpTo;
+            final needsMessage = preset == _EffectPreset.showMessage;
+            final availablePresets = trigger == EffectTrigger.onPass
+                ? const [_EffectPreset.showMessage]
+                : _EffectPreset.values
+                    .where((item) => item != _EffectPreset.none)
+                    .toList(growable: false);
+
             return AlertDialog(
-              title: Text(initialEffect == null ? '効果を追加' : '効果を編集'),
+              title: Text(initialEffect == null ? 'Actionを追加' : 'Actionを編集'),
               content: SizedBox(
-                width: 420,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DropdownButtonFormField<_EffectPreset>(
-                      initialValue: preset,
-                      decoration: const InputDecoration(
-                        labelText: 'Action',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: _EffectPreset.values
-                          .where((item) => item != _EffectPreset.none)
-                          .map(
-                            (item) => DropdownMenuItem(
-                              value: item,
-                              child: Text(_presetLabel(item)),
-                            ),
-                          )
-                          .toList(growable: false),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setDialogState(() {
-                          preset = value;
-                          if (preset == _EffectPreset.warpTo &&
-                              warpTargetId == null &&
-                              candidates.isNotEmpty) {
-                            warpTargetId = candidates.first.id;
-                          }
-                        });
-                      },
-                    ),
-                    if (needsAmount) ...[
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: amountController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: preset == _EffectPreset.skipTurn
-                              ? '休む回数'
-                              : 'マス数',
-                          helperText: '1以上の整数を入力してください',
-                          border: const OutlineInputBorder(),
-                        ),
-                      ),
-                    ],
-                    if (needsWarpTarget) ...[
-                      const SizedBox(height: 14),
-                      DropdownButtonFormField<String>(
-                        initialValue: candidates.any(
-                          (item) => item.id == warpTargetId,
-                        )
-                            ? warpTargetId
-                            : null,
+                width: 440,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<EffectTrigger>(
+                        initialValue: trigger,
                         decoration: const InputDecoration(
-                          labelText: 'ワープ先',
+                          labelText: 'Trigger',
                           border: OutlineInputBorder(),
                         ),
-                        items: candidates
+                        items: EffectTrigger.values
                             .map(
                               (item) => DropdownMenuItem(
-                                value: item.id,
-                                child: Text(item.label),
+                                value: item,
+                                child: Text(triggerDescription(item)),
                               ),
                             )
                             .toList(growable: false),
                         onChanged: (value) {
-                          setDialogState(() => warpTargetId = value);
+                          if (value == null) return;
+                          setDialogState(() {
+                            trigger = value;
+                            if (trigger == EffectTrigger.onPass) {
+                              preset = _EffectPreset.showMessage;
+                            }
+                          });
                         },
                       ),
+                      const SizedBox(height: 14),
+                      DropdownButtonFormField<_EffectPreset>(
+                        initialValue: preset,
+                        decoration: const InputDecoration(
+                          labelText: 'Action',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: availablePresets
+                            .map(
+                              (item) => DropdownMenuItem(
+                                value: item,
+                                child: Text(_presetLabel(item)),
+                              ),
+                            )
+                            .toList(growable: false),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() {
+                            preset = value;
+                            if (preset == _EffectPreset.warpTo &&
+                                warpTargetId == null &&
+                                candidates.isNotEmpty) {
+                              warpTargetId = candidates.first.id;
+                            }
+                          });
+                        },
+                      ),
+                      if (needsAmount) ...[
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: amountController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: preset == _EffectPreset.skipTurn
+                                ? '休む回数'
+                                : 'マス数',
+                            helperText: '1以上の整数を入力してください',
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
+                      if (needsWarpTarget) ...[
+                        const SizedBox(height: 14),
+                        DropdownButtonFormField<String>(
+                          initialValue: candidates.any(
+                            (item) => item.id == warpTargetId,
+                          )
+                              ? warpTargetId
+                              : null,
+                          decoration: const InputDecoration(
+                            labelText: 'ワープ先',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: candidates
+                              .map(
+                                (item) => DropdownMenuItem(
+                                  value: item.id,
+                                  child: Text(item.label),
+                                ),
+                              )
+                              .toList(growable: false),
+                          onChanged: (value) {
+                            setDialogState(() => warpTargetId = value);
+                          },
+                        ),
+                      ],
+                      if (needsMessage) ...[
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: messageController,
+                          minLines: 2,
+                          maxLines: 5,
+                          decoration: const InputDecoration(
+                            labelText: '表示するメッセージ',
+                            hintText: '例：近道を発見！',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
+                      if (trigger == EffectTrigger.onPass) ...[
+                        const SizedBox(height: 10),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '通過Triggerは現在メッセージActionに対応しています。',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
               actions: [
@@ -450,17 +525,20 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                   child: const Text('キャンセル'),
                 ),
                 FilledButton(
-                  onPressed: needsWarpTarget && warpTargetId == null
-                      ? null
-                      : () {
-                          final amount =
-                              int.tryParse(amountController.text.trim()) ?? 1;
-                          final effect =
-                              _effectFor(preset, amount, warpTargetId);
-                          if (effect != null) {
-                            Navigator.pop(dialogContext, effect);
-                          }
-                        },
+                  onPressed: () {
+                    final amount =
+                        int.tryParse(amountController.text.trim()) ?? 1;
+                    final effect = _effectFor(
+                      preset: preset,
+                      trigger: trigger,
+                      amount: amount,
+                      warpTargetId: warpTargetId,
+                      message: messageController.text,
+                    );
+                    if (effect != null) {
+                      Navigator.pop(dialogContext, effect);
+                    }
+                  },
                   child: const Text('適用'),
                 ),
               ],
@@ -471,6 +549,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     );
 
     amountController.dispose();
+    messageController.dispose();
     return result;
   }
 
@@ -484,7 +563,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     required VoidCallback onDelete,
   }) {
     return Card(
-      key: ValueKey('effect-$index-${effect.actionType.name}'),
+      key: ValueKey('effect-$index-${effect.trigger.name}-${effect.actionType.name}'),
       margin: const EdgeInsets.only(top: 8),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
@@ -498,11 +577,21 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                effectDescription(effect),
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    effectDescription(effect),
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    triggerDescription(effect.trigger),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               ),
             ),
             IconButton(
@@ -589,7 +678,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                             Row(
                               children: [
                                 Icon(
-                                  Icons.bolt_outlined,
+                                  Icons.account_tree_outlined,
                                   color: Theme.of(context).colorScheme.primary,
                                 ),
                                 const SizedBox(width: 8),
@@ -598,13 +687,13 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        '止まったとき',
+                                        'イベントブロック',
                                         style: Theme.of(context)
                                             .textTheme
                                             .titleMedium,
                                       ),
                                       Text(
-                                        'Actionは上から順番に実行されます。',
+                                        'TriggerとActionを設定し、上から順番に保存します。',
                                         style:
                                             Theme.of(context).textTheme.bodySmall,
                                       ),
@@ -617,7 +706,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                             if (effects.isEmpty) ...[
                               const SizedBox(height: 10),
                               const Text(
-                                '効果はありません。下のボタンからActionを追加できます。',
+                                'イベントはありません。下のボタンからActionを追加できます。',
                               ),
                             ] else
                               for (var index = 0;
@@ -665,7 +754,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                                 setModalState(() => effects.add(added));
                               },
                               icon: const Icon(Icons.add),
-                              label: const Text('効果を追加'),
+                              label: const Text('Actionを追加'),
                             ),
                           ],
                         ),
@@ -812,6 +901,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return Colors.lime.shade300;
       case EffectActionType.warpTo:
         return Colors.indigo.shade200;
+      case EffectActionType.showMessage:
+        return Colors.cyan.shade200;
     }
   }
 
