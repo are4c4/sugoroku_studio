@@ -9,6 +9,18 @@ String triggerDescription(EffectTrigger trigger) {
   }
 }
 
+String conditionDescription(EffectCondition? condition) {
+  if (condition == null) return '条件なし';
+  final rawPoints = condition.parameters['points'];
+  final points = rawPoints is num ? rawPoints.toInt() : 0;
+  switch (condition.type) {
+    case EffectConditionType.pointsAtLeast:
+      return '★ $points pt以上';
+    case EffectConditionType.pointsAtMost:
+      return '★ $points pt以下';
+  }
+}
+
 String effectMessage(SquareEffect effect) {
   final rawMessage = effect.parameters['message'];
   return rawMessage is String ? rawMessage.trim() : '';
