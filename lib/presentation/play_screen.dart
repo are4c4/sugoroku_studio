@@ -84,6 +84,12 @@ class _PlayScreenState extends State<PlayScreen> {
     return '次は${result.state.currentPlayer.name}のターンです';
   }
 
+  String _routeDistanceLabel(BoardSquare option) {
+    final distance = widget.board.shortestDistanceToGoal(option.id);
+    if (distance == null) return 'この先からゴールへ到達できません';
+    return 'ゴールまで最短 $distance マス';
+  }
+
   void _scheduleCpuTurn() {
     if (!mounted ||
         _rolling ||
@@ -146,9 +152,7 @@ class _PlayScreenState extends State<PlayScreen> {
                         children: [
                           Text(option.label),
                           Text(
-                            choice.board.shortestDistanceToGoal(option.id) case final distance?
-                                ? 'ゴールまで最短 $distance マス'
-                                : 'この先からゴールへ到達できません',
+                            _routeDistanceLabel(option),
                             style: Theme.of(dialogContext).textTheme.bodySmall,
                           ),
                         ],
