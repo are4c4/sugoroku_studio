@@ -10,6 +10,18 @@ class DiceRolled extends GameEvent {
   final int value;
 }
 
+class RouteChosen extends GameEvent {
+  const RouteChosen({
+    required this.playerId,
+    required this.fromSquareId,
+    required this.toSquareId,
+  });
+
+  final String playerId;
+  final String fromSquareId;
+  final String toSquareId;
+}
+
 class PlayerMoved extends GameEvent {
   const PlayerMoved({
     required this.playerId,
