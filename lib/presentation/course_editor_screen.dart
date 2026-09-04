@@ -15,6 +15,7 @@ enum _EffectPreset {
   rollAgain,
   warpTo,
   showMessage,
+  changePoints,
 }
 
 class _SquareEditResult {
@@ -251,10 +252,16 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return _EffectPreset.warpTo;
       case EffectActionType.showMessage:
         return _EffectPreset.showMessage;
+      case EffectActionType.changePoints:
+        return _EffectPreset.changePoints;
     }
   }
 
   int _amountForEffect(SquareEffect effect) {
+    if (effect.actionType == EffectActionType.changePoints) {
+      final rawPoints = effect.parameters['points'];
+      return rawPoints is num ? rawPoints.toInt() : 0;
+    }
     final rawSteps = effect.parameters['steps'];
     if (rawSteps is num && rawSteps.toInt() != 0) {
       return rawSteps.toInt().abs();
@@ -326,6 +333,12 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           actionType: EffectActionType.showMessage,
           parameters: {'message': text},
         );
+      case _EffectPreset.changePoints:
+        return SquareEffect(
+          trigger: trigger,
+          actionType: EffectActionType.changePoints,
+          parameters: {'points': amount},
+        );
     }
   }
 
@@ -347,6 +360,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return '指定マスへワープ';
       case _EffectPreset.showMessage:
         return 'メッセージを表示';
+      case _EffectPreset.changePoints:
+        return 'ポイントを増減';
     }
   }
 
@@ -385,7 +400,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           builder: (context, setDialogState) {
             final needsAmount = preset == _EffectPreset.moveForward ||
                 preset == _EffectPreset.moveBackward ||
-                preset == _EffectPreset.skipTurn;
+                preset == _EffectPreset.skipTurn ||
+                preset == _EffectPreset.changePoints;
             final needsWarpTarget = preset == _EffectPreset.warpTo;
             final needsMessage = preset == _EffectPreset.showMessage;
             final availablePresets = trigger == EffectTrigger.onPass
@@ -393,6 +409,19 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                 : _EffectPreset.values
                     .where((item) => item != _EffectPreset.none)
                     .toList(growable: false);
+
+            String amountLabel() {
+              if (preset == _EffectPreset.skipTurn) return '休む回数';
+              if (preset == _EffectPreset.changePoints) return '増減ポイント';
+              return 'マス数';
+            }
+
+            String amountHelper() {
+              if (preset == _EffectPreset.changePoints) {
+                return '増加は正数、減少は負数で入力してください';
+              }
+              return '1以上の整数を入力してください';
+            }
 
             return AlertDialog(
               title: Text(initialEffect == null ? 'Actionを追加' : 'Actionを編集'),
@@ -457,12 +486,12 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                         const SizedBox(height: 14),
                         TextField(
                           controller: amountController,
-                          keyboardType: TextInputType.number,
+                          keyboardType: TextInputType.numberWithOptions(
+                            signed: preset == _EffectPreset.changePoints,
+                          ),
                           decoration: InputDecoration(
-                            labelText: preset == _EffectPreset.skipTurn
-                                ? '休む回数'
-                                : 'マス数',
-                            helperText: '1以上の整数を入力してください',
+                            labelText: amountLabel(),
+                            helperText: amountHelper(),
                             border: const OutlineInputBorder(),
                           ),
                         ),
@@ -903,6 +932,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return Colors.indigo.shade200;
       case EffectActionType.showMessage:
         return Colors.cyan.shade200;
+      case EffectActionType.changePoints:
+        return Colors.yellow.shade300;
     }
   }
 
