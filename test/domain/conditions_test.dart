@@ -45,13 +45,20 @@ Player playerWithPoints(int points) => Player(
       points: points,
     );
 
-Player playerWithInventory(Map<String, int> inventory) => Player(
+Player playerWithState({
+  int points = 0,
+  Map<String, int> inventory = const <String, int>{},
+}) => Player(
       id: 'player',
       name: 'Player',
       type: PlayerType.human,
       currentSquareId: '',
+      points: points,
       inventory: inventory,
     );
+
+Player playerWithInventory(Map<String, int> inventory) =>
+    playerWithState(inventory: inventory);
 
 void main() {
   test('pointsAtLeast includes the threshold and skips below it', () async {
@@ -266,6 +273,171 @@ void main() {
     expect(thresholdResult.events.whereType<SquareEffectApplied>(), hasLength(1));
   });
 
+  test('allOf requires every child condition', () async {
+    const effect = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.changePoints,
+      parameters: {'points': 10},
+      condition: EffectCondition(
+        type: EffectConditionType.allOf,
+        parameters: {
+          'conditions': [
+            {
+              'type': 'pointsAtLeast',
+              'parameters': {'points': 5},
+            },
+            {
+              'type': 'hasItem',
+              'parameters': {'itemName': 'Key'},
+            },
+          ],
+        },
+      ),
+    );
+    final engine = GameEngine();
+
+    final matching = engine.createGame(
+      board: createConditionalBoard(const [effect]),
+      players: [playerWithState(points: 5, inventory: const {'Key': 1})],
+    );
+    final matchingResult = await engine.rollCurrentPlayer(matching, dice: 1);
+    expect(matchingResult.state.currentPlayer.points, 15);
+
+    final missingItem = engine.createGame(
+      board: createConditionalBoard(const [effect]),
+      players: [playerWithState(points: 5)],
+    );
+    final missingItemResult =
+        await engine.rollCurrentPlayer(missingItem, dice: 1);
+    expect(missingItemResult.state.currentPlayer.points, 5);
+    expect(missingItemResult.events.whereType<PlayerPointsChanged>(), isEmpty);
+  });
+
+  test('anyOf fires when at least one child condition matches', () async {
+    const effect = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.showMessage,
+      parameters: {'message': 'one condition matched'},
+      condition: EffectCondition(
+        type: EffectConditionType.anyOf,
+        parameters: {
+          'conditions': [
+            {
+              'type': 'pointsAtLeast',
+              'parameters': {'points': 10},
+            },
+            {
+              'type': 'hasItem',
+              'parameters': {'itemName': 'Pass'},
+            },
+          ],
+        },
+      ),
+    );
+    final engine = GameEngine();
+
+    for (final player in [
+      playerWithState(points: 10),
+      playerWithState(inventory: const {'Pass': 1}),
+    ]) {
+      final state = engine.createGame(
+        board: createConditionalBoard(const [effect]),
+        players: [player],
+      );
+      final result = await engine.rollCurrentPlayer(state, dice: 1);
+      expect(result.events.whereType<SquareEffectApplied>(), hasLength(1));
+    }
+
+    final neither = engine.createGame(
+      board: createConditionalBoard(const [effect]),
+      players: [playerWithState(points: 3)],
+    );
+    final neitherResult = await engine.rollCurrentPlayer(neither, dice: 1);
+    expect(neitherResult.events.whereType<SquareEffectApplied>(), isEmpty);
+  });
+
+  test('nested compound conditions evaluate recursively', () async {
+    const effect = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.changePoints,
+      parameters: {'points': 12},
+      condition: EffectCondition(
+        type: EffectConditionType.allOf,
+        parameters: {
+          'conditions': [
+            {
+              'type': 'pointsAtLeast',
+              'parameters': {'points': 5},
+            },
+            {
+              'type': 'anyOf',
+              'parameters': {
+                'conditions': [
+                  {
+                    'type': 'hasItem',
+                    'parameters': {'itemName': 'Key'},
+                  },
+                  {
+                    'type': 'notHasItem',
+                    'parameters': {'itemName': 'Pass'},
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ),
+    );
+    final engine = GameEngine();
+
+    final matchesNestedOr = engine.createGame(
+      board: createConditionalBoard(const [effect]),
+      players: [
+        playerWithState(points: 5, inventory: const {'Pass': 1, 'Key': 1}),
+      ],
+    );
+    final matchResult =
+        await engine.rollCurrentPlayer(matchesNestedOr, dice: 1);
+    expect(matchResult.state.currentPlayer.points, 17);
+
+    final matchesMissingPass = engine.createGame(
+      board: createConditionalBoard(const [effect]),
+      players: [playerWithState(points: 5)],
+    );
+    final missingPassResult =
+        await engine.rollCurrentPlayer(matchesMissingPass, dice: 1);
+    expect(missingPassResult.state.currentPlayer.points, 17);
+
+    final failsNestedOr = engine.createGame(
+      board: createConditionalBoard(const [effect]),
+      players: [playerWithState(points: 5, inventory: const {'Pass': 1})],
+    );
+    final failResult = await engine.rollCurrentPlayer(failsNestedOr, dice: 1);
+    expect(failResult.state.currentPlayer.points, 5);
+  });
+
+  test('empty compound conditions are safe false', () async {
+    final engine = GameEngine();
+    for (final type in [EffectConditionType.allOf, EffectConditionType.anyOf]) {
+      final effect = SquareEffect(
+        trigger: EffectTrigger.onLand,
+        actionType: EffectActionType.changePoints,
+        parameters: const {'points': 20},
+        condition: EffectCondition(
+          type: type,
+          parameters: const {'conditions': <Map<String, dynamic>>[]},
+        ),
+      );
+      final state = engine.createGame(
+        board: createConditionalBoard([effect]),
+        players: [playerWithState()],
+      );
+      final result = await engine.rollCurrentPlayer(state, dice: 1);
+      expect(result.state.currentPlayer.points, 0);
+      expect(result.events.whereType<PlayerPointsChanged>(), isEmpty);
+    }
+  });
+
   test('later item conditions see items granted by earlier actions', () async {
     const grant = SquareEffect(
       trigger: EffectTrigger.onLand,
@@ -324,23 +496,36 @@ void main() {
     expect(result.events.whereType<PlayerPointsChanged>(), hasLength(1));
   });
 
-  test('JSON round-trip preserves range and item conditions', () {
-    const pointCondition = SquareEffect(
+  test('JSON round-trip preserves nested compound conditions', () {
+    const compoundEffect = SquareEffect(
       trigger: EffectTrigger.onLand,
       actionType: EffectActionType.showMessage,
-      parameters: {'message': 'range'},
+      parameters: {'message': 'compound'},
       condition: EffectCondition(
-        type: EffectConditionType.pointsBetween,
-        parameters: {'minPoints': 5, 'maxPoints': 15},
-      ),
-    );
-    const itemCondition = SquareEffect(
-      trigger: EffectTrigger.onLand,
-      actionType: EffectActionType.showMessage,
-      parameters: {'message': 'missing pass'},
-      condition: EffectCondition(
-        type: EffectConditionType.notHasItem,
-        parameters: {'itemName': 'Pass'},
+        type: EffectConditionType.allOf,
+        parameters: {
+          'conditions': [
+            {
+              'type': 'pointsBetween',
+              'parameters': {'minPoints': 5, 'maxPoints': 15},
+            },
+            {
+              'type': 'anyOf',
+              'parameters': {
+                'conditions': [
+                  {
+                    'type': 'hasItem',
+                    'parameters': {'itemName': 'Key'},
+                  },
+                  {
+                    'type': 'notHasItem',
+                    'parameters': {'itemName': 'Pass'},
+                  },
+                ],
+              },
+            },
+          ],
+        },
       ),
     );
     const unconditionalEffect = SquareEffect(
@@ -350,17 +535,19 @@ void main() {
     );
 
     final restored = Board.fromJson(
-      createConditionalBoard(
-        const [pointCondition, itemCondition, unconditionalEffect],
-      ).toJson(),
+      createConditionalBoard(const [compoundEffect, unconditionalEffect]).toJson(),
     );
-    final effects = restored.squareById('event')!.effects;
+    final condition = restored.squareById('event')!.effects.first.condition!;
 
-    expect(effects[0].condition?.type, EffectConditionType.pointsBetween);
-    expect(effects[0].condition?.parameters['minPoints'], 5);
-    expect(effects[0].condition?.parameters['maxPoints'], 15);
-    expect(effects[1].condition?.type, EffectConditionType.notHasItem);
-    expect(effects[1].condition?.parameters['itemName'], 'Pass');
-    expect(effects[2].condition, isNull);
+    expect(condition.type, EffectConditionType.allOf);
+    expect(condition.childConditions, hasLength(2));
+    expect(condition.childConditions.first.type, EffectConditionType.pointsBetween);
+    expect(condition.childConditions.first.parameters['minPoints'], 5);
+    final nested = condition.childConditions[1];
+    expect(nested.type, EffectConditionType.anyOf);
+    expect(nested.childConditions, hasLength(2));
+    expect(nested.childConditions.first.type, EffectConditionType.hasItem);
+    expect(nested.childConditions.last.type, EffectConditionType.notHasItem);
+    expect(restored.squareById('event')!.effects.last.condition, isNull);
   });
 }
