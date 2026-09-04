@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sugoroku_studio/domain/board.dart';
+import 'package:sugoroku_studio/domain/item_definition.dart';
 import 'package:sugoroku_studio/domain/player.dart';
 import 'package:sugoroku_studio/presentation/play_screen.dart';
 
@@ -26,6 +27,19 @@ Board createOneStepBoard() {
       BoardConnection(fromSquareId: 'start', toSquareId: 'goal'),
     ],
     updatedAt: DateTime(2026, 9, 4),
+  );
+}
+
+Board createUsableItemBoard() {
+  return createOneStepBoard().copyWith(
+    itemDefinitions: const [
+      ItemDefinition(
+        name: 'Potion',
+        description: 'ポイントを回復',
+        actionType: ItemUseActionType.changePoints,
+        parameters: {'points': 5},
+      ),
+    ],
   );
 }
 
@@ -108,5 +122,75 @@ void main() {
     expect(find.text('ターン 1・プレイヤー1'), findsOneWidget);
     expect(find.text('振る'), findsOneWidget);
     expect(find.text('ゲーム終了'), findsNothing);
+  });
+
+  testWidgets('human can use a defined item without ending the turn', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PlayScreen(
+          board: createUsableItemBoard(),
+          players: const [
+            Player(
+              id: 'p1',
+              name: 'プレイヤー1',
+              type: PlayerType.human,
+              currentSquareId: '',
+              inventory: {'Potion': 2},
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final itemButton = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'アイテム'),
+    );
+    expect(itemButton.onPressed, isNotNull);
+
+    await tester.tap(find.text('アイテム'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Potion ×2'), findsOneWidget);
+    expect(find.textContaining('使うと +5pt'), findsOneWidget);
+
+    await tester.tap(find.text('使う'));
+    await pumpFor(tester, const Duration(milliseconds: 1700));
+
+    expect(find.text('ターン 1・プレイヤー1'), findsOneWidget);
+    expect(find.textContaining('★ 5pt'), findsOneWidget);
+    expect(find.text('振る'), findsOneWidget);
+
+    await tester.tap(find.text('アイテム'));
+    await tester.pumpAndSettle();
+    expect(find.text('Potion ×1'), findsOneWidget);
+  });
+
+  testWidgets('item button is disabled for inventory without definitions', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PlayScreen(
+          board: createUsableItemBoard(),
+          players: const [
+            Player(
+              id: 'p1',
+              name: 'プレイヤー1',
+              type: PlayerType.human,
+              currentSquareId: '',
+              inventory: {'Unknown': 1},
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final itemButton = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'アイテム'),
+    );
+    expect(itemButton.onPressed, isNull);
+    expect(find.text('振る'), findsOneWidget);
   });
 }
