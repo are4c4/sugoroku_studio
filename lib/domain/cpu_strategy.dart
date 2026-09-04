@@ -137,6 +137,16 @@ bool _conditionMatches(Player player, EffectCondition? condition) {
   }
 }
 
+bool _canConsume(Player player, SquareEffect effect) {
+  if (effect.actionType != EffectActionType.consumeItem) return true;
+  final rawName = effect.parameters['itemName'];
+  final itemName = rawName is String ? rawName.trim() : '';
+  final rawQuantity = effect.parameters['quantity'];
+  final quantity = rawQuantity is num ? rawQuantity.toInt() : 1;
+  final required = quantity < 1 ? 1 : quantity;
+  return itemName.isNotEmpty && player.itemQuantity(itemName) >= required;
+}
+
 Iterable<SquareEffect> _activeLandingEffects(
   Player player,
   BoardSquare square,
@@ -144,7 +154,8 @@ Iterable<SquareEffect> _activeLandingEffects(
   return square.effects.where(
     (effect) =>
         effect.trigger == EffectTrigger.onLand &&
-        _conditionMatches(player, effect.condition),
+        _conditionMatches(player, effect.condition) &&
+        _canConsume(player, effect),
   );
 }
 
@@ -189,6 +200,12 @@ int _cautiousSquareScore(
             ? rawQuantity.toInt().clamp(1, 20).toInt()
             : 1;
         score += quantity;
+      case EffectActionType.consumeItem:
+        final rawQuantity = effect.parameters['quantity'];
+        final quantity = rawQuantity is num
+            ? rawQuantity.toInt().clamp(1, 20).toInt()
+            : 1;
+        score -= quantity * 2;
       case EffectActionType.randomEvent:
         final outcomes = effect.randomEventOptions;
         if (outcomes.isNotEmpty) {
@@ -249,6 +266,12 @@ int _rewardSquareScore(Player player, BoardSquare square) {
             ? rawQuantity.toInt().clamp(1, 20).toInt()
             : 1;
         score += quantity * 10;
+      case EffectActionType.consumeItem:
+        final rawQuantity = effect.parameters['quantity'];
+        final quantity = rawQuantity is num
+            ? rawQuantity.toInt().clamp(1, 20).toInt()
+            : 1;
+        score -= quantity * 8;
       case EffectActionType.randomEvent:
         final outcomes = effect.randomEventOptions;
         if (outcomes.isNotEmpty) {
