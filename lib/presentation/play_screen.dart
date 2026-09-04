@@ -7,6 +7,7 @@ import '../domain/game_state.dart';
 import '../domain/player.dart';
 import 'effect_text.dart';
 import 'widgets/board_painter.dart';
+import 'widgets/game_effects.dart';
 
 class PlayScreen extends StatefulWidget {
   const PlayScreen({
@@ -31,6 +32,11 @@ class _PlayScreenState extends State<PlayScreen> {
   late Map<String, String> _displaySquareIds;
   bool _rolling = false;
   bool _cpuTurnScheduled = false;
+  bool _diceRolling = false;
+  int? _diceFace;
+  String? _activatedSquareId;
+  String? _effectBanner;
+  String? _winnerName;
   String _message = '';
 
   @override
@@ -86,7 +92,7 @@ class _PlayScreenState extends State<PlayScreen> {
     }
 
     _cpuTurnScheduled = true;
-    Future<void>.delayed(const Duration(milliseconds: 700), () async {
+    Future<void>.delayed(const Duration(milliseconds: 800), () async {
       if (!mounted) return;
       _cpuTurnScheduled = false;
       if (_rolling ||
@@ -99,6 +105,104 @@ class _PlayScreenState extends State<PlayScreen> {
     });
   }
 
+  Future<void> _animateDice(int finalValue) async {
+    if (!mounted) return;
+    setState(() {
+      _diceRolling = true;
+      _effectBanner = null;
+      _activatedSquareId = null;
+    });
+
+    for (var frame = 0; frame < 10; frame++) {
+      await Future<void>.delayed(const Duration(milliseconds: 55));
+      if (!mounted) return;
+      setState(() => _diceFace = (frame % 6) + 1);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _diceFace = finalValue;
+      _diceRolling = false;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+  }
+
+  Future<void> _showEffect(String squareId, String message) async {
+    if (!mounted) return;
+    setState(() {
+      _activatedSquareId = squareId;
+      _effectBanner = message;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 620));
+    if (!mounted) return;
+    setState(() {
+      _activatedSquareId = null;
+      _effectBanner = null;
+    });
+  }
+
+  Future<void> _playEvents(
+    GameTurnResult result,
+    Player actingPlayer,
+  ) async {
+    for (final event in result.events) {
+      if (!mounted) return;
+
+      if (event is DiceRolled) {
+        setState(() => _message = '${actingPlayer.name}がサイコロを振っています…');
+        await _animateDice(event.value);
+        if (!mounted) return;
+        setState(() => _message = '${actingPlayer.name}: 🎲 ${event.value}');
+        continue;
+      }
+
+      if (event is PlayerMoved) {
+        setState(() => _displaySquareIds[event.playerId] = event.toSquareId);
+        await Future<void>.delayed(const Duration(milliseconds: 270));
+        continue;
+      }
+
+      if (event is SquareActivated) {
+        setState(() => _activatedSquareId = event.squareId);
+        await Future<void>.delayed(const Duration(milliseconds: 160));
+        continue;
+      }
+
+      if (event is SquareEffectApplied) {
+        await _showEffect(
+          event.squareId,
+          '✨ ${effectDescription(event.effect)}',
+        );
+        continue;
+      }
+
+      if (event is ExtraRollGranted) {
+        await _showEffect(
+          actingPlayer.currentSquareId,
+          '🎲 もう一度振れます！',
+        );
+        continue;
+      }
+
+      if (event is PlayerTurnSkipped) {
+        await _showEffect(
+          actingPlayer.currentSquareId,
+          '⏸ ${actingPlayer.name}は1回休み',
+        );
+        continue;
+      }
+
+      if (event is GoalReached) {
+        setState(() {
+          _winnerName = actingPlayer.name;
+          _activatedSquareId = null;
+          _effectBanner = null;
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 900));
+      }
+    }
+  }
+
   Future<void> _runCurrentTurn() async {
     if (_rolling || _state.status == GameStatus.finished) return;
 
@@ -106,36 +210,9 @@ class _PlayScreenState extends State<PlayScreen> {
     setState(() => _rolling = true);
 
     final result = _engine.rollCurrentPlayer(_state);
-    final skipped = result.events.any((event) => event is PlayerTurnSkipped);
-    if (skipped) {
-      await Future<void>.delayed(const Duration(milliseconds: 350));
-      if (!mounted) return;
-      setState(() {
-        _state = result.state;
-        _displaySquareIds = {
-          for (final player in result.state.players)
-            player.id: player.currentSquareId,
-        };
-        _message = _resultMessage(result, actingPlayer);
-        _rolling = false;
-      });
-      _scheduleCpuTurn();
-      return;
-    }
-
-    final dice = result.state.diceResult;
-    if (dice != null) {
-      setState(() => _message = '${actingPlayer.name}: 🎲 $dice');
-    }
-
-    for (final event in result.events) {
-      if (event is! PlayerMoved) continue;
-      await Future<void>.delayed(const Duration(milliseconds: 220));
-      if (!mounted) return;
-      setState(() => _displaySquareIds[event.playerId] = event.toSquareId);
-    }
-
+    await _playEvents(result, actingPlayer);
     if (!mounted) return;
+
     setState(() {
       _state = result.state;
       _displaySquareIds = {
@@ -143,6 +220,8 @@ class _PlayScreenState extends State<PlayScreen> {
           player.id: player.currentSquareId,
       };
       _message = _resultMessage(result, actingPlayer);
+      _activatedSquareId = null;
+      _effectBanner = null;
       _rolling = false;
     });
     _scheduleCpuTurn();
@@ -214,37 +293,50 @@ class _PlayScreenState extends State<PlayScreen> {
                         top: square.position.y,
                         width: _squareSize,
                         height: _squareSize,
-                        child: Material(
-                          color: _colorFor(square),
-                          borderRadius: BorderRadius.circular(18),
-                          elevation: 3,
-                          child: Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(5),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    square.label,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                  if (square.effects.isNotEmpty) ...[
-                                    const SizedBox(height: 2),
+                        child: AnimatedScale(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutBack,
+                          scale: _activatedSquareId == square.id ? 1.13 : 1,
+                          child: Material(
+                            color: _colorFor(square),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              side: _activatedSquareId == square.id
+                                  ? BorderSide(
+                                      color: Theme.of(context).colorScheme.primary,
+                                      width: 4,
+                                    )
+                                  : BorderSide.none,
+                            ),
+                            elevation: _activatedSquareId == square.id ? 10 : 3,
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(5),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
                                     Text(
-                                      squareEffectSummary(square),
+                                      square.label,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       textAlign: TextAlign.center,
-                                      style: const TextStyle(fontSize: 8),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11,
+                                      ),
                                     ),
+                                    if (square.effects.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        squareEffectSummary(square),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(fontSize: 8),
+                                      ),
+                                    ],
                                   ],
-                                ],
+                                ),
                               ),
                             ),
                           ),
@@ -263,28 +355,32 @@ class _PlayScreenState extends State<PlayScreen> {
                           );
                           return AnimatedPositioned(
                             key: ValueKey(player.id),
-                            duration: const Duration(milliseconds: 180),
-                            curve: Curves.easeOut,
+                            duration: const Duration(milliseconds: 230),
+                            curve: Curves.easeInOutCubic,
                             left: square.position.x + 6 + (index % 3) * 23,
                             top: square.position.y - 15 + (index ~/ 3) * 24,
                             width: 22,
                             height: 22,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: _playerColor(index),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 2),
-                                boxShadow: const [
-                                  BoxShadow(blurRadius: 4, color: Colors.black26),
-                                ],
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '${index + 1}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
+                            child: AnimatedScale(
+                              duration: const Duration(milliseconds: 180),
+                              scale: player.id == actingPlayerId ? 1.18 : 1,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: _playerColor(index),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 2),
+                                  boxShadow: const [
+                                    BoxShadow(blurRadius: 4, color: Colors.black26),
+                                  ],
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '${index + 1}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -292,6 +388,23 @@ class _PlayScreenState extends State<PlayScreen> {
                           );
                         },
                       ),
+                    Positioned(
+                      top: 20,
+                      left: (_canvasSize.width - 72) / 2,
+                      child: DiceDisplay(
+                        value: _diceFace ?? _state.diceResult,
+                        rolling: _diceRolling,
+                      ),
+                    ),
+                    if (_effectBanner != null)
+                      Positioned(
+                        top: 112,
+                        left: 180,
+                        right: 180,
+                        child: EffectBanner(message: _effectBanner!),
+                      ),
+                    if (_winnerName != null)
+                      GoalCelebrationOverlay(playerName: _winnerName!),
                   ],
                 ),
               ),
@@ -391,4 +504,6 @@ class _PlayScreenState extends State<PlayScreen> {
       ),
     );
   }
+
+  String? get actingPlayerId => _rolling ? _state.currentPlayer.id : null;
 }
