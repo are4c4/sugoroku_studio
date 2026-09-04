@@ -96,6 +96,20 @@ class PlayerItemGranted extends GameEvent {
   final int totalQuantity;
 }
 
+class PlayerItemConsumed extends GameEvent {
+  const PlayerItemConsumed({
+    required this.playerId,
+    required this.itemName,
+    required this.quantity,
+    required this.totalQuantity,
+  });
+
+  final String playerId;
+  final String itemName;
+  final int quantity;
+  final int totalQuantity;
+}
+
 class ExtraRollGranted extends GameEvent {
   const ExtraRollGranted(this.playerId);
 

@@ -95,6 +95,97 @@ void main() {
     expect(result.state.players[1].inventory, isEmpty);
   });
 
+  test('item consumption subtracts inventory and emits remaining total', () async {
+    const consume = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.consumeItem,
+      parameters: {'itemName': '金の鍵', 'quantity': 2},
+    );
+    const configured = Player(
+      id: 'configured',
+      name: 'Configured',
+      type: PlayerType.human,
+      currentSquareId: '',
+      inventory: {'金の鍵': 3},
+    );
+    final state = GameEngine().createGame(
+      board: createItemBoard(const [consume]),
+      players: const [configured],
+    );
+
+    final result = await GameEngine().rollCurrentPlayer(state, dice: 1);
+    final event = result.events.whereType<PlayerItemConsumed>().single;
+
+    expect(result.state.currentPlayer.itemQuantity('金の鍵'), 1);
+    expect(event.itemName, '金の鍵');
+    expect(event.quantity, 2);
+    expect(event.totalQuantity, 1);
+  });
+
+  test('insufficient item consumption is a safe no-op', () async {
+    const consume = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.consumeItem,
+      parameters: {'itemName': '金の鍵', 'quantity': 2},
+    );
+    const configured = Player(
+      id: 'configured',
+      name: 'Configured',
+      type: PlayerType.human,
+      currentSquareId: '',
+      inventory: {'金の鍵': 1},
+    );
+    final state = GameEngine().createGame(
+      board: createItemBoard(const [consume]),
+      players: const [configured],
+    );
+
+    final result = await GameEngine().rollCurrentPlayer(state, dice: 1);
+
+    expect(result.state.currentPlayer.itemQuantity('金の鍵'), 1);
+    expect(result.events.whereType<PlayerItemConsumed>(), isEmpty);
+    expect(
+      result.events
+          .whereType<SquareEffectApplied>()
+          .where((event) => event.effect.actionType == EffectActionType.consumeItem),
+      isEmpty,
+    );
+  });
+
+  test('later conditions see inventory after item consumption', () async {
+    const consume = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.consumeItem,
+      parameters: {'itemName': '金の鍵', 'quantity': 1},
+    );
+    const conditionalReward = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.changePoints,
+      parameters: {'points': 10},
+      condition: EffectCondition(
+        type: EffectConditionType.itemQuantityAtLeast,
+        parameters: {'itemName': '金の鍵', 'quantity': 2},
+      ),
+    );
+    const configured = Player(
+      id: 'configured',
+      name: 'Configured',
+      type: PlayerType.human,
+      currentSquareId: '',
+      inventory: {'金の鍵': 2},
+    );
+    final state = GameEngine().createGame(
+      board: createItemBoard(const [consume, conditionalReward]),
+      players: const [configured],
+    );
+
+    final result = await GameEngine().rollCurrentPlayer(state, dice: 1);
+
+    expect(result.state.currentPlayer.itemQuantity('金の鍵'), 1);
+    expect(result.state.currentPlayer.points, 0);
+    expect(result.events.whereType<PlayerPointsChanged>(), isEmpty);
+  });
+
   test('createGame preserves configured starting inventory', () {
     const configured = Player(
       id: 'configured',
@@ -133,5 +224,26 @@ void main() {
     expect(restoredEffect.parameters['quantity'], 4);
     expect(restoredEffect.condition?.type, EffectConditionType.pointsAtLeast);
     expect(restoredEffect.condition?.parameters['points'], 10);
+  });
+
+  test('JSON round-trip preserves item consumption parameters', () {
+    const effect = SquareEffect(
+      trigger: EffectTrigger.onLand,
+      actionType: EffectActionType.consumeItem,
+      parameters: {'itemName': '銀の鍵', 'quantity': 2},
+      condition: EffectCondition(
+        type: EffectConditionType.hasItem,
+        parameters: {'itemName': '銀の鍵'},
+      ),
+    );
+
+    final restored = Board.fromJson(createItemBoard(const [effect]).toJson());
+    final restoredEffect = restored.squareById('item')!.effects.single;
+
+    expect(restoredEffect.actionType, EffectActionType.consumeItem);
+    expect(restoredEffect.parameters['itemName'], '銀の鍵');
+    expect(restoredEffect.parameters['quantity'], 2);
+    expect(restoredEffect.condition?.type, EffectConditionType.hasItem);
+    expect(restoredEffect.condition?.parameters['itemName'], '銀の鍵');
   });
 }

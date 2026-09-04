@@ -174,6 +174,36 @@ class GameEngine {
       );
     }
 
+    bool canConsumeItem(String rawName, int rawQuantity) {
+      final itemName = rawName.trim();
+      final quantity = rawQuantity < 1 ? 1 : rawQuantity;
+      return itemName.isNotEmpty &&
+          (currentInventory[itemName] ?? 0) >= quantity;
+    }
+
+    bool consumeItem(String rawName, int rawQuantity) {
+      final itemName = rawName.trim();
+      final quantity = rawQuantity < 1 ? 1 : rawQuantity;
+      final owned = currentInventory[itemName] ?? 0;
+      if (itemName.isEmpty || owned < quantity) return false;
+
+      final remaining = owned - quantity;
+      if (remaining == 0) {
+        currentInventory.remove(itemName);
+      } else {
+        currentInventory[itemName] = remaining;
+      }
+      events.add(
+        PlayerItemConsumed(
+          playerId: currentPlayer.id,
+          itemName: itemName,
+          quantity: quantity,
+          totalQuantity: remaining,
+        ),
+      );
+      return true;
+    }
+
     void emitPassMessageEffects(BoardSquare square) {
       final passMessages = square.effects
           .where(
@@ -313,6 +343,15 @@ class GameEngine {
       for (final effect in activatedSquare.effects) {
         if (effect.trigger != EffectTrigger.onLand) continue;
         if (!conditionMatches(effect.condition)) continue;
+
+        if (effect.actionType == EffectActionType.consumeItem) {
+          final rawItemName = effect.parameters['itemName'];
+          final rawQuantity = effect.parameters['quantity'];
+          final itemName = rawItemName is String ? rawItemName : '';
+          final quantity = rawQuantity is num ? rawQuantity.toInt() : 1;
+          if (!canConsumeItem(itemName, quantity)) continue;
+        }
+
         events.add(
           SquareEffectApplied(squareId: activatedSquare.id, effect: effect),
         );
@@ -352,6 +391,13 @@ class GameEngine {
             final rawItemName = effect.parameters['itemName'];
             final rawQuantity = effect.parameters['quantity'];
             grantItem(
+              rawItemName is String ? rawItemName : '',
+              rawQuantity is num ? rawQuantity.toInt() : 1,
+            );
+          case EffectActionType.consumeItem:
+            final rawItemName = effect.parameters['itemName'];
+            final rawQuantity = effect.parameters['quantity'];
+            consumeItem(
               rawItemName is String ? rawItemName : '',
               rawQuantity is num ? rawQuantity.toInt() : 1,
             );

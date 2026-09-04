@@ -86,6 +86,7 @@ class _PlayScreenState extends State<PlayScreen> {
           );
           return '${actingPlayer.name}: ★ ${finalPlayer.points}pt';
         case EffectActionType.grantItem:
+        case EffectActionType.consumeItem:
           final finalPlayer = result.state.players.firstWhere(
             (player) => player.id == actingPlayer.id,
             orElse: () => actingPlayer,
@@ -326,7 +327,8 @@ class _PlayScreenState extends State<PlayScreen> {
 
       if (event is SquareEffectApplied) {
         if (event.effect.actionType == EffectActionType.changePoints ||
-            event.effect.actionType == EffectActionType.grantItem) {
+            event.effect.actionType == EffectActionType.grantItem ||
+            event.effect.actionType == EffectActionType.consumeItem) {
           continue;
         }
         if (event.effect.actionType == EffectActionType.randomEvent) {
@@ -364,6 +366,14 @@ class _PlayScreenState extends State<PlayScreen> {
         await _showEffect(
           finalPlayer.currentSquareId,
           '🎒 「${event.itemName}」×${event.quantity} → 所持${event.totalQuantity}個',
+        );
+        continue;
+      }
+
+      if (event is PlayerItemConsumed) {
+        await _showEffect(
+          finalPlayer.currentSquareId,
+          '🧺 「${event.itemName}」×${event.quantity}を消費 → 残り${event.totalQuantity}個',
         );
         continue;
       }
@@ -461,6 +471,8 @@ class _PlayScreenState extends State<PlayScreen> {
         return Colors.yellow.shade300;
       case EffectActionType.grantItem:
         return Colors.lightGreen.shade300;
+      case EffectActionType.consumeItem:
+        return Colors.deepOrange.shade200;
       case EffectActionType.randomEvent:
         return Colors.pink.shade200;
     }
