@@ -114,6 +114,7 @@ class GameEngine {
     final selector = routeSelector ?? _chooseFirstRoute;
     final events = <GameEvent>[DiceRolled(rolledDice)];
     var currentSquareId = currentPlayer.currentSquareId;
+    var currentPoints = currentPlayer.points;
     var routeHistory = List<String>.of(currentPlayer.routeHistory);
     if (routeHistory.isEmpty || routeHistory.last != currentSquareId) {
       routeHistory = <String>[currentSquareId];
@@ -149,6 +150,7 @@ class GameEngine {
               board: board,
               player: currentPlayer.copyWith(
                 currentSquareId: currentSquareId,
+                points: currentPoints,
                 routeHistory: List<String>.unmodifiable(routeHistory),
               ),
               fromSquare: from,
@@ -286,6 +288,17 @@ class GameEngine {
             }
           case EffectActionType.showMessage:
             break;
+          case EffectActionType.changePoints:
+            final rawDelta = effect.parameters['points'];
+            final delta = rawDelta is num ? rawDelta.toInt() : 0;
+            currentPoints += delta;
+            events.add(
+              PlayerPointsChanged(
+                playerId: currentPlayer.id,
+                delta: delta,
+                points: currentPoints,
+              ),
+            );
         }
       }
 
@@ -300,6 +313,7 @@ class GameEngine {
     final updatedPlayer = currentPlayer.copyWith(
       currentSquareId: destination.id,
       skipTurns: currentPlayer.skipTurns + skipTurnsToAdd,
+      points: currentPoints,
       routeHistory: List<String>.unmodifiable(routeHistory),
     );
     players[state.currentPlayerIndex] = updatedPlayer;
