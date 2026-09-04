@@ -128,12 +128,12 @@ void main() {
       _createBoard(
         id: 'zeta',
         name: 'Zeta Course',
-        updatedAt: DateTime(2026, 9, 1),
+        updatedAt: DateTime(2026, 9, 5),
       ),
       _createBoard(
         id: 'alpha',
         name: 'Alpha Course',
-        updatedAt: DateTime(2026, 9, 5),
+        updatedAt: DateTime(2026, 9, 1),
       ),
     ]);
 
@@ -143,8 +143,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      tester.getTopLeft(find.text('Alpha Course')).dy,
-      lessThan(tester.getTopLeft(find.text('Zeta Course')).dy),
+      tester.getTopLeft(find.text('Zeta Course')).dy,
+      lessThan(tester.getTopLeft(find.text('Alpha Course')).dy),
     );
 
     await tester.tap(find.text('更新が新しい順'));
