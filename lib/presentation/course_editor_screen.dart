@@ -18,6 +18,12 @@ enum _EffectPreset {
   changePoints,
 }
 
+enum _ConditionPreset {
+  none,
+  pointsAtLeast,
+  pointsAtMost,
+}
+
 class _SquareEditResult {
   const _SquareEditResult({
     required this.square,
@@ -257,6 +263,50 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     }
   }
 
+  _ConditionPreset _conditionPresetFor(EffectCondition? condition) {
+    if (condition == null) return _ConditionPreset.none;
+    switch (condition.type) {
+      case EffectConditionType.pointsAtLeast:
+        return _ConditionPreset.pointsAtLeast;
+      case EffectConditionType.pointsAtMost:
+        return _ConditionPreset.pointsAtMost;
+    }
+  }
+
+  int _conditionPointsFor(EffectCondition? condition) {
+    if (condition == null) return 0;
+    final rawPoints = condition.parameters['points'];
+    return rawPoints is num ? rawPoints.toInt() : 0;
+  }
+
+  EffectCondition? _conditionFor(_ConditionPreset preset, int points) {
+    switch (preset) {
+      case _ConditionPreset.none:
+        return null;
+      case _ConditionPreset.pointsAtLeast:
+        return EffectCondition(
+          type: EffectConditionType.pointsAtLeast,
+          parameters: {'points': points},
+        );
+      case _ConditionPreset.pointsAtMost:
+        return EffectCondition(
+          type: EffectConditionType.pointsAtMost,
+          parameters: {'points': points},
+        );
+    }
+  }
+
+  String _conditionPresetLabel(_ConditionPreset preset) {
+    switch (preset) {
+      case _ConditionPreset.none:
+        return '条件なし';
+      case _ConditionPreset.pointsAtLeast:
+        return 'ポイントがN以上';
+      case _ConditionPreset.pointsAtMost:
+        return 'ポイントがN以下';
+    }
+  }
+
   int _amountForEffect(SquareEffect effect) {
     if (effect.actionType == EffectActionType.changePoints) {
       final rawPoints = effect.parameters['points'];
@@ -282,6 +332,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   SquareEffect? _effectFor({
     required _EffectPreset preset,
     required EffectTrigger trigger,
+    required EffectCondition? condition,
     required int amount,
     required String? warpTargetId,
     required String message,
@@ -295,28 +346,33 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           trigger: trigger,
           actionType: EffectActionType.moveBy,
           parameters: {'steps': safeAmount},
+          condition: condition,
         );
       case _EffectPreset.moveBackward:
         return SquareEffect(
           trigger: trigger,
           actionType: EffectActionType.moveBy,
           parameters: {'steps': -safeAmount},
+          condition: condition,
         );
       case _EffectPreset.moveToStart:
         return SquareEffect(
           trigger: trigger,
           actionType: EffectActionType.moveToStart,
+          condition: condition,
         );
       case _EffectPreset.skipTurn:
         return SquareEffect(
           trigger: trigger,
           actionType: EffectActionType.skipTurn,
           parameters: {'turns': safeAmount},
+          condition: condition,
         );
       case _EffectPreset.rollAgain:
         return SquareEffect(
           trigger: trigger,
           actionType: EffectActionType.rollAgain,
+          condition: condition,
         );
       case _EffectPreset.warpTo:
         if (warpTargetId == null) return null;
@@ -324,6 +380,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           trigger: trigger,
           actionType: EffectActionType.warpTo,
           parameters: {'targetSquareId': warpTargetId},
+          condition: condition,
         );
       case _EffectPreset.showMessage:
         final text = message.trim();
@@ -332,12 +389,14 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           trigger: trigger,
           actionType: EffectActionType.showMessage,
           parameters: {'message': text},
+          condition: condition,
         );
       case _EffectPreset.changePoints:
         return SquareEffect(
           trigger: trigger,
           actionType: EffectActionType.changePoints,
           parameters: {'points': amount},
+          condition: condition,
         );
     }
   }
@@ -376,6 +435,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     if (trigger == EffectTrigger.onPass && preset != _EffectPreset.showMessage) {
       preset = _EffectPreset.showMessage;
     }
+    var conditionPreset = _conditionPresetFor(initialEffect?.condition);
 
     final amountController = TextEditingController(
       text: initialEffect == null
@@ -384,6 +444,9 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     );
     final messageController = TextEditingController(
       text: initialEffect == null ? '' : effectMessage(initialEffect),
+    );
+    final conditionPointsController = TextEditingController(
+      text: _conditionPointsFor(initialEffect?.condition).toString(),
     );
     var warpTargetId = initialEffect == null
         ? (candidates.isEmpty ? null : candidates.first.id)
@@ -404,6 +467,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                 preset == _EffectPreset.changePoints;
             final needsWarpTarget = preset == _EffectPreset.warpTo;
             final needsMessage = preset == _EffectPreset.showMessage;
+            final needsConditionPoints = conditionPreset != _ConditionPreset.none;
             final availablePresets = trigger == EffectTrigger.onPass
                 ? const [_EffectPreset.showMessage]
                 : _EffectPreset.values
@@ -455,6 +519,39 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                           });
                         },
                       ),
+                      const SizedBox(height: 14),
+                      DropdownButtonFormField<_ConditionPreset>(
+                        initialValue: conditionPreset,
+                        decoration: const InputDecoration(
+                          labelText: 'Condition',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: _ConditionPreset.values
+                            .map(
+                              (item) => DropdownMenuItem(
+                                value: item,
+                                child: Text(_conditionPresetLabel(item)),
+                              ),
+                            )
+                            .toList(growable: false),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() => conditionPreset = value);
+                        },
+                      ),
+                      if (needsConditionPoints) ...[
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: conditionPointsController,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(signed: true),
+                          decoration: const InputDecoration(
+                            labelText: '条件のポイント値',
+                            helperText: '現在ポイントと比較する整数を入力してください',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 14),
                       DropdownButtonFormField<_EffectPreset>(
                         initialValue: preset,
@@ -529,7 +626,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                           maxLines: 5,
                           decoration: const InputDecoration(
                             labelText: '表示するメッセージ',
-                            hintText: '例：近道を発見！',
+                            hintText: '例：10ポイント以上なのでボーナス！',
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -557,9 +654,15 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                   onPressed: () {
                     final amount =
                         int.tryParse(amountController.text.trim()) ?? 1;
+                    final conditionPoints =
+                        int.tryParse(conditionPointsController.text.trim()) ?? 0;
                     final effect = _effectFor(
                       preset: preset,
                       trigger: trigger,
+                      condition: _conditionFor(
+                        conditionPreset,
+                        conditionPoints,
+                      ),
                       amount: amount,
                       warpTargetId: warpTargetId,
                       message: messageController.text,
@@ -579,6 +682,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 
     amountController.dispose();
     messageController.dispose();
+    conditionPointsController.dispose();
     return result;
   }
 
@@ -617,7 +721,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    triggerDescription(effect.trigger),
+                    '${triggerDescription(effect.trigger)} · ${conditionDescription(effect.condition)}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -722,7 +826,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                                             .titleMedium,
                                       ),
                                       Text(
-                                        'TriggerとActionを設定し、上から順番に保存します。',
+                                        'Trigger → Condition → Action を設定し、上から順番に評価します。',
                                         style:
                                             Theme.of(context).textTheme.bodySmall,
                                       ),
