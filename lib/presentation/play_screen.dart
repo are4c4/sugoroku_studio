@@ -5,6 +5,7 @@ import '../domain/game_engine.dart';
 import '../domain/game_event.dart';
 import '../domain/game_state.dart';
 import '../domain/player.dart';
+import 'effect_text.dart';
 import 'widgets/board_painter.dart';
 
 class PlayScreen extends StatefulWidget {
@@ -44,13 +45,58 @@ class _PlayScreenState extends State<PlayScreen> {
     _displaySquareId = _state.currentPlayer.currentSquareId;
   }
 
+  String _resultMessage(GameTurnResult result) {
+    if (result.events.any((event) => event is GoalReached)) {
+      return 'ゴール！ 🎉';
+    }
+    if (result.events.any((event) => event is PlayerTurnSkipped)) {
+      return '1回休み！ このターンはサイコロを振りませんでした';
+    }
+    if (result.events.any((event) => event is ExtraRollGranted)) {
+      return 'もう一度サイコロを振れます！';
+    }
+
+    SquareEffectApplied? appliedEffect;
+    for (final event in result.events) {
+      if (event is SquareEffectApplied) appliedEffect = event;
+    }
+    if (appliedEffect != null) {
+      switch (appliedEffect.effect.actionType) {
+        case EffectActionType.skipTurn:
+          return '${effectDescription(appliedEffect.effect)}！ 次のターンは休みです';
+        case EffectActionType.moveBy:
+        case EffectActionType.moveToStart:
+          return '${effectDescription(appliedEffect.effect)}！';
+        case EffectActionType.rollAgain:
+          return 'もう一度サイコロを振れます！';
+        case EffectActionType.warpTo:
+          return effectDescription(appliedEffect.effect);
+      }
+    }
+    return '次のサイコロを振りましょう';
+  }
+
   Future<void> _rollDice() async {
     if (_rolling || _state.status == GameStatus.finished) return;
     setState(() => _rolling = true);
 
     final result = _engine.rollCurrentPlayer(_state);
+    final skipped = result.events.any((event) => event is PlayerTurnSkipped);
+    if (skipped) {
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      if (!mounted) return;
+      setState(() {
+        _state = result.state;
+        _message = _resultMessage(result);
+        _rolling = false;
+      });
+      return;
+    }
+
     final dice = result.state.diceResult;
-    setState(() => _message = '🎲 $dice が出ました');
+    if (dice != null) {
+      setState(() => _message = '🎲 $dice が出ました');
+    }
 
     for (final event in result.events) {
       if (event is! PlayerMoved) continue;
@@ -60,20 +106,34 @@ class _PlayScreenState extends State<PlayScreen> {
     }
 
     if (!mounted) return;
-    final reachedGoal = result.events.any((event) => event is GoalReached);
     setState(() {
       _state = result.state;
-      _message = reachedGoal ? 'ゴール！ 🎉' : '次のサイコロを振りましょう';
+      _displaySquareId = result.state.players.first.currentSquareId;
+      _message = _resultMessage(result);
       _rolling = false;
     });
   }
 
-  Color _colorFor(SquareKind kind) {
-    return switch (kind) {
-      SquareKind.start => Colors.green.shade300,
-      SquareKind.normal => Colors.blue.shade200,
-      SquareKind.goal => Colors.amber.shade300,
-    };
+  Color _colorFor(BoardSquare square) {
+    if (square.kind == SquareKind.start) return Colors.green.shade300;
+    if (square.kind == SquareKind.goal) return Colors.amber.shade300;
+    if (square.effects.isEmpty) return Colors.blue.shade200;
+
+    final effect = square.effects.first;
+    switch (effect.actionType) {
+      case EffectActionType.moveBy:
+        final rawSteps = effect.parameters['steps'];
+        final steps = rawSteps is num ? rawSteps.toInt() : 0;
+        return steps < 0 ? Colors.orange.shade200 : Colors.teal.shade200;
+      case EffectActionType.moveToStart:
+        return Colors.red.shade200;
+      case EffectActionType.skipTurn:
+        return Colors.purple.shade200;
+      case EffectActionType.rollAgain:
+        return Colors.lime.shade300;
+      case EffectActionType.warpTo:
+        return Colors.indigo.shade200;
+    }
   }
 
   @override
@@ -109,16 +169,36 @@ class _PlayScreenState extends State<PlayScreen> {
                         width: _squareSize,
                         height: _squareSize,
                         child: Material(
-                          color: _colorFor(square.kind),
+                          color: _colorFor(square),
                           borderRadius: BorderRadius.circular(18),
                           elevation: 3,
                           child: Center(
-                            child: Text(
-                              square.label,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
+                            child: Padding(
+                              padding: const EdgeInsets.all(5),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    square.label,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                  if (square.effects.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      squareEffectSummary(square),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(fontSize: 8),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
                           ),

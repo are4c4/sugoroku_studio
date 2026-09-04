@@ -1,3 +1,5 @@
+import 'board.dart';
+
 sealed class GameEvent {
   const GameEvent();
 }
@@ -24,6 +26,32 @@ class SquareActivated extends GameEvent {
   const SquareActivated(this.squareId);
 
   final String squareId;
+}
+
+class SquareEffectApplied extends GameEvent {
+  const SquareEffectApplied({
+    required this.squareId,
+    required this.effect,
+  });
+
+  final String squareId;
+  final SquareEffect effect;
+}
+
+class ExtraRollGranted extends GameEvent {
+  const ExtraRollGranted(this.playerId);
+
+  final String playerId;
+}
+
+class PlayerTurnSkipped extends GameEvent {
+  const PlayerTurnSkipped({
+    required this.playerId,
+    required this.remainingSkipTurns,
+  });
+
+  final String playerId;
+  final int remainingSkipTurns;
 }
 
 class GoalReached extends GameEvent {

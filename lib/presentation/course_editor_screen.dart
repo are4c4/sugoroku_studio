@@ -3,7 +3,17 @@ import 'package:flutter/material.dart';
 import '../core/id.dart';
 import '../data/course_repository.dart';
 import '../domain/board.dart';
+import 'effect_text.dart';
 import 'widgets/board_painter.dart';
+
+enum _EffectPreset {
+  none,
+  moveForward,
+  moveBackward,
+  moveToStart,
+  skipTurn,
+  rollAgain,
+}
 
 class CourseEditorScreen extends StatefulWidget {
   const CourseEditorScreen({
@@ -160,6 +170,223 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     });
   }
 
+  _EffectPreset _presetFor(BoardSquare square) {
+    if (square.effects.isEmpty) return _EffectPreset.none;
+    final effect = square.effects.first;
+    switch (effect.actionType) {
+      case EffectActionType.moveBy:
+        final rawSteps = effect.parameters['steps'];
+        final steps = rawSteps is num ? rawSteps.toInt() : 0;
+        return steps < 0
+            ? _EffectPreset.moveBackward
+            : _EffectPreset.moveForward;
+      case EffectActionType.moveToStart:
+        return _EffectPreset.moveToStart;
+      case EffectActionType.skipTurn:
+        return _EffectPreset.skipTurn;
+      case EffectActionType.rollAgain:
+        return _EffectPreset.rollAgain;
+      case EffectActionType.warpTo:
+        return _EffectPreset.none;
+    }
+  }
+
+  int _amountFor(BoardSquare square) {
+    if (square.effects.isEmpty) return 1;
+    final rawSteps = square.effects.first.parameters['steps'];
+    if (rawSteps is num && rawSteps.toInt() != 0) {
+      return rawSteps.toInt().abs();
+    }
+    return 1;
+  }
+
+  List<SquareEffect> _effectsFor(_EffectPreset preset, int amount) {
+    final safeAmount = amount < 1 ? 1 : amount;
+    switch (preset) {
+      case _EffectPreset.none:
+        return const <SquareEffect>[];
+      case _EffectPreset.moveForward:
+        return [
+          SquareEffect(
+            trigger: EffectTrigger.onLand,
+            actionType: EffectActionType.moveBy,
+            parameters: {'steps': safeAmount},
+          ),
+        ];
+      case _EffectPreset.moveBackward:
+        return [
+          SquareEffect(
+            trigger: EffectTrigger.onLand,
+            actionType: EffectActionType.moveBy,
+            parameters: {'steps': -safeAmount},
+          ),
+        ];
+      case _EffectPreset.moveToStart:
+        return const [
+          SquareEffect(
+            trigger: EffectTrigger.onLand,
+            actionType: EffectActionType.moveToStart,
+          ),
+        ];
+      case _EffectPreset.skipTurn:
+        return const [
+          SquareEffect(
+            trigger: EffectTrigger.onLand,
+            actionType: EffectActionType.skipTurn,
+            parameters: {'turns': 1},
+          ),
+        ];
+      case _EffectPreset.rollAgain:
+        return const [
+          SquareEffect(
+            trigger: EffectTrigger.onLand,
+            actionType: EffectActionType.rollAgain,
+          ),
+        ];
+    }
+  }
+
+  String _presetLabel(_EffectPreset preset) {
+    switch (preset) {
+      case _EffectPreset.none:
+        return '効果なし';
+      case _EffectPreset.moveForward:
+        return 'Nマス進む';
+      case _EffectPreset.moveBackward:
+        return 'Nマス戻る';
+      case _EffectPreset.moveToStart:
+        return 'スタートに戻る';
+      case _EffectPreset.skipTurn:
+        return '1回休み';
+      case _EffectPreset.rollAgain:
+        return 'もう一度サイコロを振る';
+    }
+  }
+
+  Future<void> _editSquare(BoardSquare square) async {
+    final labelController = TextEditingController(text: square.label);
+    final amountController = TextEditingController(
+      text: _amountFor(square).toString(),
+    );
+    var preset = _presetFor(square);
+
+    final updated = await showModalBottomSheet<BoardSquare>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final needsAmount = preset == _EffectPreset.moveForward ||
+                preset == _EffectPreset.moveBackward;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                4,
+                20,
+                20 + MediaQuery.viewInsetsOf(context).bottom,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'マスの設定',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: labelController,
+                      decoration: const InputDecoration(
+                        labelText: '名前',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    if (square.kind == SquareKind.normal) ...[
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<_EffectPreset>(
+                        initialValue: preset,
+                        decoration: const InputDecoration(
+                          labelText: '止まったときの効果',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: _EffectPreset.values
+                            .map(
+                              (item) => DropdownMenuItem(
+                                value: item,
+                                child: Text(_presetLabel(item)),
+                              ),
+                            )
+                            .toList(growable: false),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setModalState(() => preset = value);
+                        },
+                      ),
+                      if (needsAmount) ...[
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: amountController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'マス数',
+                            helperText: '1以上の整数を入力してください',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
+                    ],
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(sheetContext),
+                          child: const Text('キャンセル'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () {
+                            final label = labelController.text.trim();
+                            final amount =
+                                int.tryParse(amountController.text.trim()) ?? 1;
+                            Navigator.pop(
+                              sheetContext,
+                              square.copyWith(
+                                label: label.isEmpty ? square.label : label,
+                                effects: square.kind == SquareKind.normal
+                                    ? _effectsFor(preset, amount)
+                                    : square.effects,
+                              ),
+                            );
+                          },
+                          child: const Text('適用'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    labelController.dispose();
+    amountController.dispose();
+    if (updated == null || !mounted) return;
+
+    setState(() {
+      _board = _board.copyWith(
+        squares: _board.squares
+            .map((item) => item.id == updated.id ? updated : item)
+            .toList(growable: false),
+      );
+    });
+  }
+
   Future<void> _save() async {
     if (_saving) return;
     setState(() => _saving = true);
@@ -179,12 +406,26 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     }
   }
 
-  Color _colorFor(SquareKind kind) {
-    return switch (kind) {
-      SquareKind.start => Colors.green.shade300,
-      SquareKind.normal => Colors.blue.shade200,
-      SquareKind.goal => Colors.amber.shade300,
-    };
+  Color _colorFor(BoardSquare square) {
+    if (square.kind == SquareKind.start) return Colors.green.shade300;
+    if (square.kind == SquareKind.goal) return Colors.amber.shade300;
+    if (square.effects.isEmpty) return Colors.blue.shade200;
+
+    final effect = square.effects.first;
+    switch (effect.actionType) {
+      case EffectActionType.moveBy:
+        final rawSteps = effect.parameters['steps'];
+        final steps = rawSteps is num ? rawSteps.toInt() : 0;
+        return steps < 0 ? Colors.orange.shade200 : Colors.teal.shade200;
+      case EffectActionType.moveToStart:
+        return Colors.red.shade200;
+      case EffectActionType.skipTurn:
+        return Colors.purple.shade200;
+      case EffectActionType.rollAgain:
+        return Colors.lime.shade300;
+      case EffectActionType.warpTo:
+        return Colors.indigo.shade200;
+    }
   }
 
   @override
@@ -244,23 +485,41 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                           width: _squareSize,
                           height: _squareSize,
                           child: GestureDetector(
+                            onTap: () => _editSquare(square),
                             onPanUpdate: (details) =>
                                 _moveSquare(square, details.delta),
                             onLongPress: () => _removeSquare(square),
                             child: Material(
                               elevation: 4,
-                              color: _colorFor(square.kind),
+                              color: _colorFor(square),
                               borderRadius: BorderRadius.circular(18),
                               child: Center(
                                 child: Padding(
-                                  padding: const EdgeInsets.all(6),
-                                  child: Text(
-                                    square.label,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
+                                  padding: const EdgeInsets.all(5),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        square.label,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                      if (square.effects.isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          squareEffectSummary(square),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(fontSize: 8),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 ),
                               ),
@@ -300,7 +559,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                       label: const Text('ゴール'),
                     ),
                     const SizedBox(width: 16),
-                    const Text('ドラッグ: 移動 / 長押し: 削除'),
+                    const Text('タップ: 設定 / ドラッグ: 移動 / 長押し: 削除'),
                   ],
                 ),
               ),

@@ -15,6 +15,13 @@ void main() {
         label: 'Normal',
         position: BoardPosition(x: 100, y: 0),
         kind: SquareKind.normal,
+        effects: [
+          SquareEffect(
+            trigger: EffectTrigger.onLand,
+            actionType: EffectActionType.moveBy,
+            parameters: {'steps': -3},
+          ),
+        ],
       ),
       BoardSquare(
         id: 'goal',
@@ -45,7 +52,7 @@ void main() {
     expect(board.isPlayable, isTrue);
   });
 
-  test('board JSON round-trip preserves structural data', () {
+  test('board JSON round-trip preserves structural data and effects', () {
     final original = createBoard();
     final restored = Board.fromJson(original.toJson());
 
@@ -54,5 +61,10 @@ void main() {
     expect(restored.squares.length, original.squares.length);
     expect(restored.connections.length, original.connections.length);
     expect(restored.orderedPath().last.kind, SquareKind.goal);
+
+    final effect = restored.squares[1].effects.single;
+    expect(effect.trigger, EffectTrigger.onLand);
+    expect(effect.actionType, EffectActionType.moveBy);
+    expect(effect.parameters['steps'], -3);
   });
 }
