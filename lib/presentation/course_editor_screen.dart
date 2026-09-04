@@ -18,6 +18,7 @@ enum _EffectPreset {
   showMessage,
   changePoints,
   grantItem,
+  consumeItem,
   randomEvent,
 }
 
@@ -267,6 +268,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return _EffectPreset.changePoints;
       case EffectActionType.grantItem:
         return _EffectPreset.grantItem;
+      case EffectActionType.consumeItem:
+        return _EffectPreset.consumeItem;
       case EffectActionType.randomEvent:
         return _EffectPreset.randomEvent;
     }
@@ -362,7 +365,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       final rawPoints = effect.parameters['points'];
       return rawPoints is num ? rawPoints.toInt() : 0;
     }
-    if (effect.actionType == EffectActionType.grantItem) {
+    if (effect.actionType == EffectActionType.grantItem ||
+        effect.actionType == EffectActionType.consumeItem) {
       return effectItemQuantity(effect);
     }
     final rawSteps = effect.parameters['steps'];
@@ -462,6 +466,15 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           parameters: {'itemName': name, 'quantity': safeAmount},
           condition: condition,
         );
+      case _EffectPreset.consumeItem:
+        final name = itemName.trim();
+        if (name.isEmpty) return null;
+        return SquareEffect(
+          trigger: trigger,
+          actionType: EffectActionType.consumeItem,
+          parameters: {'itemName': name, 'quantity': safeAmount},
+          condition: condition,
+        );
       case _EffectPreset.randomEvent:
         if (randomOptions.length < 2) return null;
         return SquareEffect(
@@ -497,6 +510,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return 'ポイントを増減';
       case _EffectPreset.grantItem:
         return 'アイテムを付与';
+      case _EffectPreset.consumeItem:
+        return 'アイテムを消費';
       case _EffectPreset.randomEvent:
         return 'ランダムイベント';
     }
@@ -555,10 +570,12 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                 preset == _EffectPreset.moveBackward ||
                 preset == _EffectPreset.skipTurn ||
                 preset == _EffectPreset.changePoints ||
-                preset == _EffectPreset.grantItem;
+                preset == _EffectPreset.grantItem ||
+                preset == _EffectPreset.consumeItem;
             final needsWarpTarget = preset == _EffectPreset.warpTo;
             final needsMessage = preset == _EffectPreset.showMessage;
-            final needsItemName = preset == _EffectPreset.grantItem;
+            final needsItemName = preset == _EffectPreset.grantItem ||
+                preset == _EffectPreset.consumeItem;
             final needsRandomOptions = preset == _EffectPreset.randomEvent;
             final needsConditionPoints =
                 conditionPreset == _ConditionPreset.pointsAtLeast ||
@@ -577,7 +594,10 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
             String amountLabel() {
               if (preset == _EffectPreset.skipTurn) return '休む回数';
               if (preset == _EffectPreset.changePoints) return '増減ポイント';
-              if (preset == _EffectPreset.grantItem) return '個数';
+              if (preset == _EffectPreset.grantItem ||
+                  preset == _EffectPreset.consumeItem) {
+                return '個数';
+              }
               return 'マス数';
             }
 
@@ -707,10 +727,12 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                         const SizedBox(height: 14),
                         TextField(
                           controller: itemNameController,
-                          decoration: const InputDecoration(
-                            labelText: 'アイテム名',
+                          decoration: InputDecoration(
+                            labelText: preset == _EffectPreset.consumeItem
+                                ? '消費するアイテム名'
+                                : 'アイテム名',
                             hintText: '例：金の鍵',
-                            border: OutlineInputBorder(),
+                            border: const OutlineInputBorder(),
                           ),
                         ),
                       ],
@@ -1224,6 +1246,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return Colors.yellow.shade300;
       case EffectActionType.grantItem:
         return Colors.lightGreen.shade300;
+      case EffectActionType.consumeItem:
+        return Colors.deepOrange.shade200;
       case EffectActionType.randomEvent:
         return Colors.pink.shade200;
     }
