@@ -21,10 +21,11 @@ Issue #1 の v0.1〜v0.5 を基準に、コースを作成し、人間やCPUと�
 - 人間 + CPU の混在プレイ
 - CPUターンの自動実行
 - プレイヤー名・人間/CPU設定
+- CPUごとのStrategy設定（最短 / 安全重視 / 報酬重視）
 - プレイヤーごとのポイント
 - プレイヤーごとの所持アイテム
 - 人間プレイヤーの分岐ルート選択
-- CPUのゴールまでの最短経路選択
+- CPU Strategyによる分岐ルート選択
 - 1〜6のサイコロ
 - サイコロロール演出
 - 1マスずつの駒移動アニメーション
@@ -84,7 +85,9 @@ lib/
 
 画面上の座標 (`BoardPosition`) とゲーム上の経路 (`BoardConnection`) は別データです。マス効果 (`SquareEffect`) もマス本体から分離しています。
 
-`Board` は複数の outgoing connection を持つグラフとして扱います。`GameEngine` は分岐点で `RouteSelector` を呼び出し、人間プレイヤーはUIで進路を選択し、CPUは `ShortestPathCpuStrategy` でゴールまでの最短ルートを選びます。プレイヤーには実際に通った `routeHistory` を保持するため、分岐後の「Nマス戻る」も選んだ経路を正しく逆走できます。
+`Board` は複数の outgoing connection を持つグラフとして扱います。`GameEngine` は分岐点で `RouteSelector` を呼び出し、人間プレイヤーはUIで進路を選択します。CPUは `Player.cpuStrategy` に応じて `CpuStrategy` を差し替え、最短ルート・安全重視・報酬重視から進路を決定します。複数CPUが参加する場合も、それぞれ別のStrategyを設定できます。プレイヤーには実際に通った `routeHistory` を保持するため、分岐後の「Nマス戻る」も選んだ経路を正しく逆走できます。
+
+`ShortestPathCpuStrategy` はゴールまでの距離を最優先します。`CautiousCpuStrategy` は休み・後退・スタート戻り・ポイント損失・ランダムイベントの悪い結果などをリスクとして評価します。`RewardSeekingCpuStrategy` はポイント獲得、アイテム付与、再ロール、ランダムイベントの期待報酬などを評価します。条件付きEffectは、そのCPUの現在ポイントで条件を満たすものだけを経路評価に含めます。
 
 通常マスは複数の `SquareEffect` を持てます。エディタでは各Effectを `Trigger -> Condition -> Action` として設定し、複数のActionを追加・編集・削除・並べ替えできます。`onLand` では移動・休み・追加ロール・ワープ・メッセージ表示・ポイント増減・アイテム付与・ランダムイベントを利用できます。`onPass` は最初の安全な縦スライスとしてメッセージ表示に対応し、プレイヤーがそのマスを通過した場合だけ発火します。停止した場合は `onPass` は発火しません。
 
@@ -94,7 +97,7 @@ lib/
 
 `randomEvent` Actionは2つ以上の `RandomEventOption` から1つを等確率で選択します。現在の候補結果はメッセージ表示、ポイント増減、アイテム付与に対応しています。抽選結果は `RandomEventChosen` としてGameEventへ流し、選択されたポイント・アイテム結果も既存の専用GameEventで処理します。移動やワープをランダム候補に含めないことで、最初の実装では再帰的な経路変更を避けています。
 
-特殊マスは `GameEngine` が `SquareEffect` を解決し、移動や効果発動を `GameEvent` として発行します。プレイ画面は `GameEvent` を順番に再生して、サイコロ、駒移動、分岐、特殊マス、メッセージ、ポイント、アイテム、ランダムイベント、ゴールの演出を行います。ゲームルールと演出を分けることで、今後アイテム使用や高度なCPU戦略などを追加してもルールをUIへ埋め込まずに拡張できます。
+特殊マスは `GameEngine` が `SquareEffect` を解決し、移動や効果発動を `GameEvent` として発行します。プレイ画面は `GameEvent` を順番に再生して、サイコロ、駒移動、分岐、特殊マス、メッセージ、ポイント、アイテム、ランダムイベント、ゴールの演出を行います。ゲームルールと演出を分けることで、今後アイテム使用やより高度な条件式などを追加してもルールをUIへ埋め込まずに拡張できます。
 
 ローカル保存は `CourseRepository` を境界にしています。現在の `LocalCourseRepository` は構造化JSONをアプリのドキュメント領域へ保存します。SQLite/Drift等へ移行する場合もUIから永続化実装を切り離せます。
 
@@ -129,4 +132,4 @@ flutter test
 
 設計の基準は [Issue #1](https://github.com/are4c4/sugoroku_studio/issues/1) です。
 
-v0.1 のコース作成・基本プレイ、v0.2 の基本特殊マス、v0.3 のプレイヤー設定・CPU・ローカル複数人・基本アニメーション、v0.4 の分岐コース・ワープ・CPU経路選択まで実装済みです。v0.5 では複数効果、Trigger / Condition / Actionブロック、メッセージAction、`onLand` / `onPass` Trigger、ポイント増減、ポイント条件、アイテム付与、ランダムイベントまで実装しています。次の候補はアイテム使用、高度なCPU Strategy、より一般的な条件式です。
+v0.1 のコース作成・基本プレイ、v0.2 の基本特殊マス、v0.3 のプレイヤー設定・CPU・ローカル複数人・基本アニメーション、v0.4 の分岐コース・ワープ・CPU経路選択まで実装済みです。v0.5 では複数効果、Trigger / Condition / Actionブロック、メッセージAction、`onLand` / `onPass` Trigger、ポイント増減、ポイント条件、アイテム付与、ランダムイベント、高度なCPU Strategyまで実装しています。次の候補はアイテム使用、より一般的な条件式です。
