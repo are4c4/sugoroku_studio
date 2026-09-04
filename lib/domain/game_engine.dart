@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'board.dart';
@@ -12,12 +13,32 @@ class GameTurnResult {
   final List<GameEvent> events;
 }
 
+class RouteChoiceContext {
+  const RouteChoiceContext({
+    required this.board,
+    required this.player,
+    required this.fromSquare,
+    required this.options,
+    required this.remainingSteps,
+  });
+
+  final Board board;
+  final Player player;
+  final BoardSquare fromSquare;
+  final List<BoardSquare> options;
+  final int remainingSteps;
+}
+
+typedef RouteSelector = FutureOr<String> Function(RouteChoiceContext context);
+
 class GameEngine {
   GameEngine({Random? random}) : _random = random ?? Random();
 
   static const int _maxEffectActivationsPerRoll = 16;
 
   final Random _random;
+
+  int rollDice() => _random.nextInt(6) + 1;
 
   GameState createGame({
     required Board board,
@@ -30,9 +51,14 @@ class GameEngine {
       throw ArgumentError.value(players, 'players', 'must not be empty');
     }
 
-    final startSquareId = board.orderedPath().first.id;
+    final start = board.startSquare!;
     final initializedPlayers = players
-        .map((player) => player.copyWith(currentSquareId: startSquareId))
+        .map(
+          (player) => player.copyWith(
+            currentSquareId: start.id,
+            routeHistory: <String>[start.id],
+          ),
+        )
         .toList(growable: false);
 
     return GameState(
@@ -44,7 +70,11 @@ class GameEngine {
     );
   }
 
-  GameTurnResult rollCurrentPlayer(GameState state) {
+  Future<GameTurnResult> rollCurrentPlayer(
+    GameState state, {
+    int? dice,
+    RouteSelector? routeSelector,
+  }) async {
     if (state.status == GameStatus.finished) {
       return GameTurnResult(state: state, events: const <GameEvent>[]);
     }
@@ -75,43 +105,118 @@ class GameEngine {
       );
     }
 
-    final dice = _random.nextInt(6) + 1;
-    final events = <GameEvent>[DiceRolled(dice)];
-    final path = state.board.orderedPath();
-    var positionIndex = path.indexWhere(
-      (square) => square.id == currentPlayer.currentSquareId,
-    );
-    if (positionIndex < 0) {
-      throw StateError('Current player is not on the board path.');
+    final rolledDice = dice ?? rollDice();
+    if (rolledDice < 1 || rolledDice > 6) {
+      throw ArgumentError.value(rolledDice, 'dice', 'must be between 1 and 6');
     }
 
-    void moveToIndex(int requestedIndex) {
-      final targetIndex = requestedIndex.clamp(0, path.length - 1).toInt();
-      if (targetIndex > positionIndex) {
-        for (var index = positionIndex + 1; index <= targetIndex; index++) {
+    final board = state.board;
+    final selector = routeSelector ?? _chooseFirstRoute;
+    final events = <GameEvent>[DiceRolled(rolledDice)];
+    var currentSquareId = currentPlayer.currentSquareId;
+    var routeHistory = List<String>.of(currentPlayer.routeHistory);
+    if (routeHistory.isEmpty || routeHistory.last != currentSquareId) {
+      routeHistory = <String>[currentSquareId];
+    }
+
+    Future<void> moveForward(int steps) async {
+      for (var step = 0; step < steps; step++) {
+        final from = board.squareById(currentSquareId);
+        if (from == null || from.kind == SquareKind.goal) return;
+        final options = board.outgoingSquares(from.id);
+        if (options.isEmpty) return;
+
+        var next = options.first;
+        if (options.length > 1) {
+          final requestedId = await selector(
+            RouteChoiceContext(
+              board: board,
+              player: currentPlayer.copyWith(
+                currentSquareId: currentSquareId,
+                routeHistory: List<String>.unmodifiable(routeHistory),
+              ),
+              fromSquare: from,
+              options: options,
+              remainingSteps: steps - step,
+            ),
+          );
+          next = options.firstWhere(
+            (option) => option.id == requestedId,
+            orElse: () => options.first,
+          );
           events.add(
-            PlayerMoved(
+            RouteChosen(
               playerId: currentPlayer.id,
-              fromSquareId: path[index - 1].id,
-              toSquareId: path[index].id,
+              fromSquareId: from.id,
+              toSquareId: next.id,
             ),
           );
         }
-      } else if (targetIndex < positionIndex) {
-        for (var index = positionIndex - 1; index >= targetIndex; index--) {
-          events.add(
-            PlayerMoved(
-              playerId: currentPlayer.id,
-              fromSquareId: path[index + 1].id,
-              toSquareId: path[index].id,
-            ),
-          );
-        }
+
+        events.add(
+          PlayerMoved(
+            playerId: currentPlayer.id,
+            fromSquareId: currentSquareId,
+            toSquareId: next.id,
+          ),
+        );
+        currentSquareId = next.id;
+        routeHistory.add(next.id);
+        if (next.kind == SquareKind.goal) return;
       }
-      positionIndex = targetIndex;
     }
 
-    moveToIndex(positionIndex + dice);
+    void moveBackward(int steps) {
+      for (var step = 0; step < steps; step++) {
+        if (routeHistory.length > 1) {
+          final from = currentSquareId;
+          routeHistory.removeLast();
+          currentSquareId = routeHistory.last;
+          events.add(
+            PlayerMoved(
+              playerId: currentPlayer.id,
+              fromSquareId: from,
+              toSquareId: currentSquareId,
+            ),
+          );
+          continue;
+        }
+
+        final incoming = board.incomingSquares(currentSquareId);
+        if (incoming.isEmpty) return;
+        final from = currentSquareId;
+        currentSquareId = incoming.first.id;
+        routeHistory = <String>[currentSquareId];
+        events.add(
+          PlayerMoved(
+            playerId: currentPlayer.id,
+            fromSquareId: from,
+            toSquareId: currentSquareId,
+          ),
+        );
+      }
+    }
+
+    void moveDirectlyTo(String targetSquareId, {required bool resetHistory}) {
+      final target = board.squareById(targetSquareId);
+      if (target == null || target.id == currentSquareId) return;
+      final from = currentSquareId;
+      currentSquareId = target.id;
+      if (resetHistory) {
+        routeHistory = <String>[target.id];
+      } else {
+        routeHistory.add(target.id);
+      }
+      events.add(
+        PlayerMoved(
+          playerId: currentPlayer.id,
+          fromSquareId: from,
+          toSquareId: target.id,
+        ),
+      );
+    }
+
+    await moveForward(rolledDice);
 
     var skipTurnsToAdd = 0;
     var extraRollGranted = false;
@@ -121,8 +226,9 @@ class GameEngine {
     while (shouldActivateSquare &&
         activationCount < _maxEffectActivationsPerRoll) {
       activationCount++;
-      final activatedSquare = path[positionIndex];
-      final positionBeforeEffects = positionIndex;
+      final activatedSquare = board.squareById(currentSquareId);
+      if (activatedSquare == null) break;
+      final positionBeforeEffects = currentSquareId;
       events.add(SquareActivated(activatedSquare.id));
 
       for (final effect in activatedSquare.effects) {
@@ -135,9 +241,16 @@ class GameEngine {
           case EffectActionType.moveBy:
             final rawSteps = effect.parameters['steps'];
             final steps = rawSteps is num ? rawSteps.toInt() : 0;
-            moveToIndex(positionIndex + steps);
+            if (steps > 0) {
+              await moveForward(steps);
+            } else if (steps < 0) {
+              moveBackward(steps.abs());
+            }
           case EffectActionType.moveToStart:
-            moveToIndex(0);
+            final start = board.startSquare;
+            if (start != null) {
+              moveDirectlyTo(start.id, resetHistory: true);
+            }
           case EffectActionType.skipTurn:
             final rawTurns = effect.parameters['turns'];
             final turns = rawTurns is num ? rawTurns.toInt() : 1;
@@ -146,19 +259,25 @@ class GameEngine {
             extraRollGranted = true;
             events.add(ExtraRollGranted(currentPlayer.id));
           case EffectActionType.warpTo:
-            // Warp is reserved for the branching-course milestone. Keeping the
-            // action in the model preserves JSON compatibility until then.
-            break;
+            final targetSquareId = effect.parameters['targetSquareId'];
+            if (targetSquareId is String) {
+              moveDirectlyTo(targetSquareId, resetHistory: false);
+            }
         }
       }
 
-      shouldActivateSquare = positionIndex != positionBeforeEffects;
+      shouldActivateSquare = currentSquareId != positionBeforeEffects;
     }
 
-    final destination = path[positionIndex];
+    final destination = board.squareById(currentSquareId);
+    if (destination == null) {
+      throw StateError('Current player is not on the board.');
+    }
+
     final updatedPlayer = currentPlayer.copyWith(
       currentSquareId: destination.id,
       skipTurns: currentPlayer.skipTurns + skipTurnsToAdd,
+      routeHistory: List<String>.unmodifiable(routeHistory),
     );
     players[state.currentPlayerIndex] = updatedPlayer;
 
@@ -177,10 +296,12 @@ class GameEngine {
         players: players,
         currentPlayerIndex: nextPlayerIndex,
         turn: nextTurn,
-        diceResult: dice,
+        diceResult: rolledDice,
         status: finished ? GameStatus.finished : GameStatus.playing,
       ),
       events: List<GameEvent>.unmodifiable(events),
     );
   }
+
+  String _chooseFirstRoute(RouteChoiceContext context) => context.options.first.id;
 }
