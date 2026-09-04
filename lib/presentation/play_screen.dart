@@ -87,6 +87,12 @@ class _PlayScreenState extends State<PlayScreen> {
             orElse: () => actingPlayer,
           );
           return '${actingPlayer.name}: ★ ${finalPlayer.points}pt';
+        case EffectActionType.grantItem:
+          final finalPlayer = result.state.players.firstWhere(
+            (player) => player.id == actingPlayer.id,
+            orElse: () => actingPlayer,
+          );
+          return '${actingPlayer.name}: 🎒 ${finalPlayer.totalItems}個所持';
       }
     }
     return '次は${result.state.currentPlayer.name}のターンです';
@@ -265,7 +271,8 @@ class _PlayScreenState extends State<PlayScreen> {
       }
 
       if (event is SquareEffectApplied) {
-        if (event.effect.actionType == EffectActionType.changePoints) {
+        if (event.effect.actionType == EffectActionType.changePoints ||
+            event.effect.actionType == EffectActionType.grantItem) {
           continue;
         }
         final message = effectMessage(event.effect);
@@ -283,6 +290,14 @@ class _PlayScreenState extends State<PlayScreen> {
         await _showEffect(
           finalPlayer.currentSquareId,
           '⭐ $sign${event.delta}pt → ${event.points}pt',
+        );
+        continue;
+      }
+
+      if (event is PlayerItemGranted) {
+        await _showEffect(
+          finalPlayer.currentSquareId,
+          '🎒 「${event.itemName}」×${event.quantity} → 所持${event.totalQuantity}個',
         );
         continue;
       }
@@ -378,6 +393,8 @@ class _PlayScreenState extends State<PlayScreen> {
         return Colors.cyan.shade200;
       case EffectActionType.changePoints:
         return Colors.yellow.shade300;
+      case EffectActionType.grantItem:
+        return Colors.lightGreen.shade300;
     }
   }
 
@@ -582,7 +599,7 @@ class _PlayScreenState extends State<PlayScreen> {
                                 ),
                               ),
                               label: Text(
-                                '${_state.players[index].name}${_state.players[index].type == PlayerType.cpu ? ' (CPU)' : ''} · ★ ${_state.players[index].points}pt',
+                                '${_state.players[index].name}${_state.players[index].type == PlayerType.cpu ? ' (CPU)' : ''} · ★ ${_state.players[index].points}pt · 🎒 ${_state.players[index].totalItems}',
                               ),
                               backgroundColor:
                                   index == _state.currentPlayerIndex
