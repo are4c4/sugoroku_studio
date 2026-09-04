@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'board.dart';
+import 'cpu_item_use_policy.dart';
 import 'effect_condition_evaluator.dart';
 import 'game_event.dart';
 import 'game_state.dart';
@@ -113,7 +114,7 @@ class GameEngine {
 
     final board = state.board;
     final selector = routeSelector ?? _chooseFirstRoute;
-    final events = <GameEvent>[DiceRolled(rolledDice)];
+    final events = <GameEvent>[];
     var currentSquareId = currentPlayer.currentSquareId;
     var currentPoints = currentPlayer.points;
     var currentInventory = Map<String, int>.of(currentPlayer.inventory);
@@ -186,6 +187,16 @@ class GameEngine {
       );
       return true;
     }
+
+    if (currentPlayer.type == PlayerType.cpu) {
+      final itemName = chooseAutomaticCpuItem(board: board, player: currentPlayer);
+      final definition = itemName == null ? null : board.itemDefinitionByName(itemName);
+      if (definition != null && consumeItem(definition.name, 1)) {
+        changePoints(definition.pointsDelta);
+      }
+    }
+
+    events.add(DiceRolled(rolledDice));
 
     void emitPassMessageEffects(BoardSquare square) {
       final passMessages = square.effects
