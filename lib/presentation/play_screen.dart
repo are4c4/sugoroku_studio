@@ -32,7 +32,7 @@ class _PlayScreenState extends State<PlayScreen> {
   late GameState _state;
   late Map<String, String> _displaySquareIds;
   bool _rolling = false;
-  bool _cpuTurnScheduled = false;
+  bool _automaticTurnScheduled = false;
   bool _diceRolling = false;
   int? _diceFace;
   String? _activatedSquareId;
@@ -49,7 +49,7 @@ class _PlayScreenState extends State<PlayScreen> {
       for (final player in _state.players) player.id: player.currentSquareId,
     };
     _message = '${_state.currentPlayer.name}のターンです';
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleCpuTurn());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleAutomaticTurn());
   }
 
   String _resultMessage(GameTurnResult result, Player actingPlayer) {
@@ -112,27 +112,57 @@ class _PlayScreenState extends State<PlayScreen> {
     };
   }
 
-  void _scheduleCpuTurn() {
+  bool get _currentTurnRunsAutomatically {
+    if (_state.status == GameStatus.finished) return false;
+    final player = _state.currentPlayer;
+    return player.type == PlayerType.cpu || player.skipTurns > 0;
+  }
+
+  void _scheduleAutomaticTurn() {
     if (!mounted ||
         _rolling ||
-        _cpuTurnScheduled ||
-        _state.status == GameStatus.finished ||
-        _state.currentPlayer.type != PlayerType.cpu) {
+        _automaticTurnScheduled ||
+        !_currentTurnRunsAutomatically) {
       return;
     }
 
-    _cpuTurnScheduled = true;
+    _automaticTurnScheduled = true;
     Future<void>.delayed(const Duration(milliseconds: 800), () async {
       if (!mounted) return;
-      _cpuTurnScheduled = false;
-      if (_rolling ||
-          _state.status == GameStatus.finished ||
-          _state.currentPlayer.type != PlayerType.cpu) {
-        return;
-      }
-      setState(() => _message = '${_state.currentPlayer.name}がサイコロを振ります…');
+      _automaticTurnScheduled = false;
+      if (_rolling || !_currentTurnRunsAutomatically) return;
+
+      final player = _state.currentPlayer;
+      setState(() {
+        _message = player.skipTurns > 0
+            ? '${player.name}は1回休みです…'
+            : '${player.name}がサイコロを振ります…';
+      });
       await _runCurrentTurn();
     });
+  }
+
+  void _restartGame() {
+    if (_rolling) return;
+    final restarted = _engine.createGame(
+      board: widget.board,
+      players: widget.players,
+    );
+    setState(() {
+      _state = restarted;
+      _displaySquareIds = {
+        for (final player in restarted.players) player.id: player.currentSquareId,
+      };
+      _rolling = false;
+      _automaticTurnScheduled = false;
+      _diceRolling = false;
+      _diceFace = null;
+      _activatedSquareId = null;
+      _effectBanner = null;
+      _winnerName = null;
+      _message = '${restarted.currentPlayer.name}のターンです';
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleAutomaticTurn());
   }
 
   Future<String> _selectRoute(RouteChoiceContext choice) async {
@@ -403,7 +433,7 @@ class _PlayScreenState extends State<PlayScreen> {
       _effectBanner = null;
       _rolling = false;
     });
-    _scheduleCpuTurn();
+    _scheduleAutomaticTurn();
   }
 
   Color _colorFor(BoardSquare square) {
@@ -452,7 +482,10 @@ class _PlayScreenState extends State<PlayScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final currentIsHuman = _state.currentPlayer.type == PlayerType.human;
+    final currentPlayer = _state.currentPlayer;
+    final currentIsHuman = currentPlayer.type == PlayerType.human;
+    final currentIsSkipped = currentPlayer.skipTurns > 0;
+    final canHumanRoll = currentIsHuman && !currentIsSkipped;
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.board.name)),
@@ -669,28 +702,45 @@ class _PlayScreenState extends State<PlayScreen> {
                             ],
                           ),
                         ),
-                        FilledButton.icon(
-                          onPressed: !_rolling &&
-                                  _state.status != GameStatus.finished &&
-                                  currentIsHuman
-                              ? _runCurrentTurn
-                              : null,
-                          icon: _rolling
-                              ? const SizedBox.square(
-                                  dimension: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : currentIsHuman
-                                  ? const Icon(Icons.casino_outlined)
-                                  : const Icon(Icons.smart_toy_outlined),
-                          label: Text(
-                            _state.status == GameStatus.finished
-                                ? 'ゴール'
-                                : currentIsHuman
-                                    ? '振る'
-                                    : 'CPUターン',
+                        if (_state.status == GameStatus.finished)
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: _restartGame,
+                                icon: const Icon(Icons.replay),
+                                label: const Text('もう一度'),
+                              ),
+                              FilledButton.icon(
+                                onPressed: () => Navigator.maybePop(context),
+                                icon: const Icon(Icons.exit_to_app),
+                                label: const Text('終了'),
+                              ),
+                            ],
+                          )
+                        else
+                          FilledButton.icon(
+                            onPressed: !_rolling && canHumanRoll
+                                ? _runCurrentTurn
+                                : null,
+                            icon: _rolling
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : currentIsSkipped
+                                    ? const Icon(Icons.pause_circle_outline)
+                                    : currentIsHuman
+                                        ? const Icon(Icons.casino_outlined)
+                                        : const Icon(Icons.smart_toy_outlined),
+                            label: Text(
+                              currentIsSkipped
+                                  ? '1回休み'
+                                  : currentIsHuman
+                                      ? '振る'
+                                      : 'CPUターン',
+                            ),
                           ),
-                        ),
                       ],
                     ),
                   ],
