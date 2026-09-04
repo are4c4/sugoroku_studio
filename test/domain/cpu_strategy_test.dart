@@ -196,6 +196,33 @@ void main() {
     );
   });
 
+  test('reward strategy evaluates missing-item conditions from inventory', () {
+    final board = createStrategyBoard(
+      longEffects: const [
+        SquareEffect(
+          trigger: EffectTrigger.onLand,
+          actionType: EffectActionType.changePoints,
+          parameters: {'points': 10},
+          condition: EffectCondition(
+            type: EffectConditionType.notHasItem,
+            parameters: {'itemName': 'Pass'},
+          ),
+        ),
+      ],
+    );
+    const strategy = RewardSeekingCpuStrategy();
+
+    expect(choose(strategy, board, cpuPlayer()), 'long-1');
+    expect(
+      choose(
+        strategy,
+        board,
+        cpuPlayer(inventory: const {'Pass': 1}),
+      ),
+      'short',
+    );
+  });
+
   test('createGame preserves the configured CPU strategy', () {
     final board = createStrategyBoard();
     final initial = GameEngine().createGame(
