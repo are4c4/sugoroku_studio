@@ -12,6 +12,7 @@ enum EffectActionType {
   warpTo,
   showMessage,
   changePoints,
+  grantItem,
 }
 
 class BoardPosition {
