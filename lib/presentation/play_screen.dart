@@ -5,8 +5,10 @@ import '../domain/cpu_strategy.dart';
 import '../domain/game_engine.dart';
 import '../domain/game_event.dart';
 import '../domain/game_state.dart';
+import '../domain/item_use.dart';
 import '../domain/player.dart';
 import 'effect_text.dart';
+import 'item_use_dialog.dart';
 import 'widgets/board_painter.dart';
 import 'widgets/game_effects.dart';
 
@@ -446,6 +448,46 @@ class _PlayScreenState extends State<PlayScreen> {
     _scheduleAutomaticTurn();
   }
 
+  Future<void> _useItem() async {
+    if (_rolling || _state.status == GameStatus.finished) return;
+    final actingPlayer = _state.currentPlayer;
+    if (actingPlayer.type != PlayerType.human || actingPlayer.skipTurns > 0) {
+      return;
+    }
+
+    final itemName = await showItemUseDialog(
+      context,
+      board: widget.board,
+      player: actingPlayer,
+    );
+    if (itemName == null || !mounted) return;
+
+    setState(() {
+      _rolling = true;
+      _message = '${actingPlayer.name}が「$itemName」を使います…';
+    });
+
+    final result = _engine.useCurrentPlayerItem(_state, itemName: itemName);
+    await _playEvents(
+      result,
+      actingPlayer,
+      diceAlreadyAnimated: true,
+    );
+    if (!mounted) return;
+
+    final updatedPlayer = result.state.players.firstWhere(
+      (player) => player.id == actingPlayer.id,
+      orElse: () => actingPlayer,
+    );
+    setState(() {
+      _state = result.state;
+      _message = '${actingPlayer.name}: 「$itemName」を使用 · ★ ${updatedPlayer.points}pt';
+      _activatedSquareId = null;
+      _effectBanner = null;
+      _rolling = false;
+    });
+  }
+
   Color _colorFor(BoardSquare square) {
     if (square.kind == SquareKind.start) return Colors.green.shade300;
     if (square.kind == SquareKind.goal) return Colors.amber.shade300;
@@ -498,6 +540,9 @@ class _PlayScreenState extends State<PlayScreen> {
     final currentIsHuman = currentPlayer.type == PlayerType.human;
     final currentIsSkipped = currentPlayer.skipTurns > 0;
     final canHumanRoll = currentIsHuman && !currentIsSkipped;
+    final canUseItem = currentIsHuman &&
+        !currentIsSkipped &&
+        usableItemDefinitions(widget.board, currentPlayer).isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.board.name)),
@@ -731,27 +776,39 @@ class _PlayScreenState extends State<PlayScreen> {
                             ],
                           )
                         else
-                          FilledButton.icon(
-                            onPressed: !_rolling && canHumanRoll
-                                ? _runCurrentTurn
-                                : null,
-                            icon: _rolling
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : currentIsSkipped
-                                    ? const Icon(Icons.pause_circle_outline)
-                                    : currentIsHuman
-                                        ? const Icon(Icons.casino_outlined)
-                                        : const Icon(Icons.smart_toy_outlined),
-                            label: Text(
-                              currentIsSkipped
-                                  ? '1回休み'
-                                  : currentIsHuman
-                                      ? '振る'
-                                      : 'CPUターン',
-                            ),
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: !_rolling && canUseItem ? _useItem : null,
+                                icon: const Icon(Icons.inventory_2_outlined),
+                                label: const Text('アイテム'),
+                              ),
+                              FilledButton.icon(
+                                onPressed: !_rolling && canHumanRoll
+                                    ? _runCurrentTurn
+                                    : null,
+                                icon: _rolling
+                                    ? const SizedBox.square(
+                                        dimension: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : currentIsSkipped
+                                        ? const Icon(Icons.pause_circle_outline)
+                                        : currentIsHuman
+                                            ? const Icon(Icons.casino_outlined)
+                                            : const Icon(Icons.smart_toy_outlined),
+                                label: Text(
+                                  currentIsSkipped
+                                      ? '1回休み'
+                                      : currentIsHuman
+                                          ? '振る'
+                                          : 'CPUターン',
+                                ),
+                              ),
+                            ],
                           ),
                       ],
                     ),
