@@ -54,7 +54,7 @@ class DiceDisplay extends StatelessWidget {
 
   String _face(int value) {
     const faces = <String>['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
-    return faces[(value - 1).clamp(0, 5)];
+    return faces[(value - 1).clamp(0, 5).toInt()];
   }
 }
 
@@ -122,7 +122,7 @@ class GoalCelebrationOverlay extends StatelessWidget {
                 ),
                 Center(
                   child: Opacity(
-                    opacity: progress.clamp(0, 1),
+                    opacity: progress.clamp(0, 1).toDouble(),
                     child: Transform.scale(
                       scale: 0.65 + progress * 0.35,
                       child: child,
@@ -187,8 +187,8 @@ class _ConfettiPainter extends CustomPainter {
         center.dx + math.cos(angle) * distance + wave,
         center.dy + math.sin(angle) * distance + progress * progress * 90,
       );
-      paint.color = colors[index % colors.length]
-          .withValues(alpha: (1 - progress * 0.35).clamp(0, 1));
+      final alpha = (1 - progress * 0.35).clamp(0, 1).toDouble();
+      paint.color = colors[index % colors.length].withValues(alpha: alpha);
       canvas.save();
       canvas.translate(offset.dx, offset.dy);
       canvas.rotate(angle + progress * math.pi);
