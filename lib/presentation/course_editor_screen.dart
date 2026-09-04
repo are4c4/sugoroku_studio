@@ -87,19 +87,18 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     );
 
     final squares = List<BoardSquare>.of(_board.squares);
-    switch (kind) {
-      case SquareKind.start:
-        squares.insert(0, square);
-      case SquareKind.normal:
-        final goalIndex =
-            squares.indexWhere((item) => item.kind == SquareKind.goal);
-        if (goalIndex >= 0) {
-          squares.insert(goalIndex, square);
-        } else {
-          squares.add(square);
-        }
-      case SquareKind.goal:
+    if (kind == SquareKind.start) {
+      squares.insert(0, square);
+    } else if (kind == SquareKind.goal) {
+      squares.add(square);
+    } else {
+      final goalIndex =
+          squares.indexWhere((item) => item.kind == SquareKind.goal);
+      if (goalIndex >= 0) {
+        squares.insert(goalIndex, square);
+      } else {
         squares.add(square);
+      }
     }
 
     setState(() {

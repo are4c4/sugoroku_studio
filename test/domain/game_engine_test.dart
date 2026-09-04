@@ -19,7 +19,7 @@ class FixedRandom implements Random {
   double nextDouble() => value / 6;
 
   @override
-  int nextInt(int max) => value.clamp(0, max - 1);
+  int nextInt(int max) => value.clamp(0, max - 1).toInt();
 }
 
 void main() {
