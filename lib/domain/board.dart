@@ -1,3 +1,5 @@
+import 'item_definition.dart';
+
 enum SquareKind { start, normal, goal }
 
 enum EffectTrigger { onLand, onPass }
@@ -255,6 +257,7 @@ class Board {
     required this.squares,
     required this.connections,
     required this.updatedAt,
+    this.itemDefinitions = const <ItemDefinition>[],
   });
 
   final String id;
@@ -262,12 +265,14 @@ class Board {
   final List<BoardSquare> squares;
   final List<BoardConnection> connections;
   final DateTime updatedAt;
+  final List<ItemDefinition> itemDefinitions;
 
   Board copyWith({
     String? name,
     List<BoardSquare>? squares,
     List<BoardConnection>? connections,
     DateTime? updatedAt,
+    List<ItemDefinition>? itemDefinitions,
   }) {
     return Board(
       id: id,
@@ -275,6 +280,7 @@ class Board {
       squares: squares ?? this.squares,
       connections: connections ?? this.connections,
       updatedAt: updatedAt ?? this.updatedAt,
+      itemDefinitions: itemDefinitions ?? this.itemDefinitions,
     );
   }
 
@@ -288,6 +294,15 @@ class Board {
   BoardSquare? squareById(String id) {
     for (final square in squares) {
       if (square.id == id) return square;
+    }
+    return null;
+  }
+
+  ItemDefinition? itemDefinitionByName(String itemName) {
+    final name = itemName.trim();
+    if (name.isEmpty) return null;
+    for (final definition in itemDefinitions) {
+      if (definition.name == name) return definition;
     }
     return null;
   }
@@ -369,6 +384,8 @@ class Board {
         'squares': squares.map((square) => square.toJson()).toList(),
         'connections':
             connections.map((connection) => connection.toJson()).toList(),
+        'itemDefinitions':
+            itemDefinitions.map((definition) => definition.toJson()).toList(),
         'updatedAt': updatedAt.toIso8601String(),
       };
 
@@ -376,6 +393,8 @@ class Board {
     final rawSquares = json['squares'] as List<dynamic>? ?? const <dynamic>[];
     final rawConnections =
         json['connections'] as List<dynamic>? ?? const <dynamic>[];
+    final rawItemDefinitions =
+        json['itemDefinitions'] as List<dynamic>? ?? const <dynamic>[];
     return Board(
       id: json['id'] as String,
       name: json['name'] as String? ?? '名称未設定',
@@ -392,6 +411,15 @@ class Board {
               Map<String, dynamic>.from(connection as Map),
             ),
           )
+          .toList(growable: false),
+      itemDefinitions: rawItemDefinitions
+          .whereType<Map>()
+          .map(
+            (definition) => ItemDefinition.fromJson(
+              Map<String, dynamic>.from(definition),
+            ),
+          )
+          .where((definition) => definition.name.isNotEmpty)
           .toList(growable: false),
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
