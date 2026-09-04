@@ -120,12 +120,25 @@ class GameEngine {
       routeHistory = <String>[currentSquareId];
     }
 
+    bool conditionMatches(EffectCondition? condition) {
+      if (condition == null) return true;
+      final rawPoints = condition.parameters['points'];
+      final threshold = rawPoints is num ? rawPoints.toInt() : 0;
+      switch (condition.type) {
+        case EffectConditionType.pointsAtLeast:
+          return currentPoints >= threshold;
+        case EffectConditionType.pointsAtMost:
+          return currentPoints <= threshold;
+      }
+    }
+
     void emitPassMessageEffects(BoardSquare square) {
       final passMessages = square.effects
           .where(
             (effect) =>
                 effect.trigger == EffectTrigger.onPass &&
-                effect.actionType == EffectActionType.showMessage,
+                effect.actionType == EffectActionType.showMessage &&
+                conditionMatches(effect.condition),
           )
           .toList(growable: false);
       if (passMessages.isEmpty) return;
@@ -256,6 +269,7 @@ class GameEngine {
 
       for (final effect in activatedSquare.effects) {
         if (effect.trigger != EffectTrigger.onLand) continue;
+        if (!conditionMatches(effect.condition)) continue;
         events.add(
           SquareEffectApplied(squareId: activatedSquare.id, effect: effect),
         );
