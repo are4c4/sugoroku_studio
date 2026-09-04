@@ -26,6 +26,17 @@ String effectMessage(SquareEffect effect) {
   return rawMessage is String ? rawMessage.trim() : '';
 }
 
+String effectItemName(SquareEffect effect) {
+  final rawName = effect.parameters['itemName'];
+  return rawName is String ? rawName.trim() : '';
+}
+
+int effectItemQuantity(SquareEffect effect) {
+  final rawQuantity = effect.parameters['quantity'];
+  final quantity = rawQuantity is num ? rawQuantity.toInt() : 1;
+  return quantity < 1 ? 1 : quantity;
+}
+
 String effectDescription(SquareEffect effect) {
   switch (effect.actionType) {
     case EffectActionType.moveBy:
@@ -53,6 +64,10 @@ String effectDescription(SquareEffect effect) {
       if (points > 0) return '$pointsポイント獲得';
       if (points < 0) return '${points.abs()}ポイント失う';
       return 'ポイント変化なし';
+    case EffectActionType.grantItem:
+      final itemName = effectItemName(effect);
+      final quantity = effectItemQuantity(effect);
+      return itemName.isEmpty ? 'アイテムを付与' : '「$itemName」×$quantity を獲得';
   }
 }
 
