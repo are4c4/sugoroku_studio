@@ -4,7 +4,7 @@ A customizable sugoroku board game maker built with Flutter.
 
 ## Current MVP
 
-Issue #1 の v0.1〜v0.2 を基準に、コースを作って1人で遊べる最初の縦スライスを実装しています。
+Issue #1 の v0.1〜v0.3 を基準に、コースを作成し、人間やCPUと実際に遊べる縦スライスを実装しています。
 
 - コース一覧
 - 新規コース作成
@@ -15,8 +15,15 @@ Issue #1 の v0.1〜v0.2 を基準に、コースを作って1人で遊べる最
 - 一本道の接続
 - コースのローカルJSON保存・読込・削除
 - 1人プレイ
+- ローカル複数人プレイ
+- 人間 + CPU の混在プレイ
+- CPUターンの自動実行
+- プレイヤー名・人間/CPU設定
 - 1〜6のサイコロ
-- 1マスずつの駒移動表示
+- サイコロロール演出
+- 1マスずつの駒移動アニメーション
+- 特殊マス発動の強調・バナー表示
+- ゴール時の紙吹雪・ゴール表示
 - ゴール判定
 - Nマス進む
 - Nマス戻る
@@ -26,7 +33,7 @@ Issue #1 の v0.1〜v0.2 を基準に、コースを作って1人で遊べる最
 - 効果による移動先の特殊マスを続けて解決
 - Board / Square / Connection / Effect の分離
 - GameEngine / GameEvent とUIの分離
-- Human / CPU 共通 Player モデルの土台
+- Human / CPU 共通 Player モデル
 - Flutter analyze / test のGitHub Actions
 
 ## Architecture
@@ -46,14 +53,17 @@ lib/
 └─ presentation/
    ├─ course_list_screen.dart
    ├─ course_editor_screen.dart
+   ├─ player_setup_screen.dart
    ├─ effect_text.dart
    ├─ play_screen.dart
    └─ widgets/
+      ├─ board_painter.dart
+      └─ game_effects.dart
 ```
 
 画面上の座標 (`BoardPosition`) とゲーム上の経路 (`BoardConnection`) は別データです。マス効果 (`SquareEffect`) もマス本体から分離しています。
 
-特殊マスは `GameEngine` が `SquareEffect` を解決し、移動や効果発動を `GameEvent` として発行します。UIはイベント列を使って駒移動やメッセージを表示するため、今後CPUやアニメーションを追加してもゲームルールをUIへ埋め込まずに拡張できます。
+特殊マスは `GameEngine` が `SquareEffect` を解決し、移動や効果発動を `GameEvent` として発行します。プレイ画面は `GameEvent` を順番に再生して、サイコロ、駒移動、特殊マス、ゴールの演出を行います。ゲームルールと演出を分けることで、今後SE/BGMや分岐コースを追加してもルールをUIへ埋め込まずに拡張できます。
 
 ローカル保存は `CourseRepository` を境界にしています。現在の `LocalCourseRepository` は構造化JSONをアプリのドキュメント領域へ保存します。SQLite/Drift等へ移行する場合もUIから永続化実装を切り離せます。
 
@@ -88,4 +98,4 @@ flutter test
 
 設計の基準は [Issue #1](https://github.com/are4c4/sugoroku_studio/issues/1) です。
 
-v0.1 のコース作成・1人プレイと v0.2 の基本特殊マスまで実装済みです。次の大きな候補は v0.3 のCPUプレイヤー、ローカル複数人、プレイヤー設定、基本アニメーション／エフェクトです。
+v0.1 のコース作成・基本プレイ、v0.2 の基本特殊マス、v0.3 のプレイヤー設定・CPU・ローカル複数人・基本アニメーションまで実装済みです。次の大きな候補は v0.4 の分岐コース、ワープ、CPUの経路選択です。
