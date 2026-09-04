@@ -8,6 +8,13 @@ import 'course_editor_screen.dart';
 import 'item_definition_editor.dart';
 import 'player_setup_screen.dart';
 
+enum _CourseSort {
+  updatedNewest,
+  updatedOldest,
+  nameAscending,
+  nameDescending,
+}
+
 class CourseListScreen extends StatefulWidget {
   const CourseListScreen({required this.repository, super.key});
 
@@ -19,11 +26,21 @@ class CourseListScreen extends StatefulWidget {
 
 class _CourseListScreenState extends State<CourseListScreen> {
   late Future<List<Board>> _boardsFuture;
+  late final TextEditingController _searchController;
+  _CourseSort _sort = _CourseSort.updatedNewest;
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
+    _searchController = TextEditingController();
     _reload();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _reload() {
@@ -33,6 +50,34 @@ class _CourseListScreenState extends State<CourseListScreen> {
   Future<void> _refresh() async {
     setState(_reload);
     await _boardsFuture;
+  }
+
+  List<Board> _visibleBoards(List<Board> boards) {
+    final query = _searchQuery.trim().toLowerCase();
+    final visible = boards
+        .where((board) => query.isEmpty || board.name.toLowerCase().contains(query))
+        .toList();
+
+    switch (_sort) {
+      case _CourseSort.updatedNewest:
+        visible.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      case _CourseSort.updatedOldest:
+        visible.sort((a, b) => a.updatedAt.compareTo(b.updatedAt));
+      case _CourseSort.nameAscending:
+        visible.sort((a, b) => a.name.compareTo(b.name));
+      case _CourseSort.nameDescending:
+        visible.sort((a, b) => b.name.compareTo(a.name));
+    }
+    return visible;
+  }
+
+  String _sortLabel(_CourseSort sort) {
+    return switch (sort) {
+      _CourseSort.updatedNewest => '更新が新しい順',
+      _CourseSort.updatedOldest => '更新が古い順',
+      _CourseSort.nameAscending => '名前 A→Z',
+      _CourseSort.nameDescending => '名前 Z→A',
+    };
   }
 
   Board _createStarterBoard() {
@@ -237,66 +282,146 @@ class _CourseListScreenState extends State<CourseListScreen> {
             );
           }
 
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-              itemCount: boards.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (context, index) {
-                final board = boards[index];
-                return Card(
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      child: Text('${board.squares.length}'),
-                    ),
-                    title: Text(board.name),
-                    subtitle: Text(
-                      '${board.isPlayable ? '${board.squares.length}マス・プレイ可能' : '${board.squares.length}マス・経路を確認してください'} · 使用アイテム${board.itemDefinitions.length}種',
-                    ),
-                    onTap: () => _editBoard(board),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: 'プレイ',
-                          onPressed: board.isPlayable
-                              ? () => _playBoard(board)
-                              : null,
-                          icon: const Icon(Icons.play_arrow),
+          final visibleBoards = _visibleBoards(boards);
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          labelText: 'コースを検索',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _searchQuery.isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: '検索をクリア',
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() => _searchQuery = '');
+                                  },
+                                  icon: const Icon(Icons.clear),
+                                ),
+                          border: const OutlineInputBorder(),
                         ),
-                        PopupMenuButton<String>(
-                          onSelected: (value) {
-                            if (value == 'edit') _editBoard(board);
-                            if (value == 'duplicate') _duplicateBoard(board);
-                            if (value == 'items') _editItemDefinitions(board);
-                            if (value == 'delete') _deleteBoard(board);
-                          },
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(
-                              value: 'edit',
-                              child: Text('編集'),
-                            ),
-                            PopupMenuItem(
-                              value: 'duplicate',
-                              child: Text('複製'),
-                            ),
-                            PopupMenuItem(
-                              value: 'items',
-                              child: Text('使用可能アイテム'),
-                            ),
-                            PopupMenuItem(
-                              value: 'delete',
-                              child: Text('削除'),
+                        onChanged: (value) => setState(() => _searchQuery = value),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      width: 180,
+                      child: DropdownButtonFormField<_CourseSort>(
+                        initialValue: _sort,
+                        decoration: const InputDecoration(
+                          labelText: '並び順',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: _CourseSort.values
+                            .map(
+                              (sort) => DropdownMenuItem(
+                                value: sort,
+                                child: Text(_sortLabel(sort)),
+                              ),
+                            )
+                            .toList(growable: false),
+                        onChanged: (value) {
+                          if (value != null) setState(() => _sort = value);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: visibleBoards.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.search_off, size: 48),
+                            const SizedBox(height: 10),
+                            Text('「${_searchQuery.trim()}」に一致するコースはありません'),
+                            const SizedBox(height: 10),
+                            TextButton(
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                              child: const Text('検索をクリア'),
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: _refresh,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+                          itemCount: visibleBoards.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (context, index) {
+                            final board = visibleBoards[index];
+                            return Card(
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  child: Text('${board.squares.length}'),
+                                ),
+                                title: Text(board.name),
+                                subtitle: Text(
+                                  '${board.isPlayable ? '${board.squares.length}マス・プレイ可能' : '${board.squares.length}マス・経路を確認してください'} · 使用アイテム${board.itemDefinitions.length}種',
+                                ),
+                                onTap: () => _editBoard(board),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      tooltip: 'プレイ',
+                                      onPressed: board.isPlayable
+                                          ? () => _playBoard(board)
+                                          : null,
+                                      icon: const Icon(Icons.play_arrow),
+                                    ),
+                                    PopupMenuButton<String>(
+                                      onSelected: (value) {
+                                        if (value == 'edit') _editBoard(board);
+                                        if (value == 'duplicate') {
+                                          _duplicateBoard(board);
+                                        }
+                                        if (value == 'items') {
+                                          _editItemDefinitions(board);
+                                        }
+                                        if (value == 'delete') _deleteBoard(board);
+                                      },
+                                      itemBuilder: (_) => const [
+                                        PopupMenuItem(
+                                          value: 'edit',
+                                          child: Text('編集'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'duplicate',
+                                          child: Text('複製'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'items',
+                                          child: Text('使用可能アイテム'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'delete',
+                                          child: Text('削除'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+              ),
+            ],
           );
         },
       ),

@@ -36,10 +36,14 @@ class _MemoryCourseRepository implements CourseRepository {
   }
 }
 
-Board _createBoard() {
+Board _createBoard({
+  String id = 'original',
+  String name = 'テストコース',
+  DateTime? updatedAt,
+}) {
   return Board(
-    id: 'original',
-    name: 'テストコース',
+    id: id,
+    name: name,
     squares: const [
       BoardSquare(
         id: 'start',
@@ -57,7 +61,7 @@ Board _createBoard() {
     connections: const [
       BoardConnection(fromSquareId: 'start', toSquareId: 'goal'),
     ],
-    updatedAt: DateTime(2026, 9, 5),
+    updatedAt: updatedAt ?? DateTime(2026, 9, 5),
   );
 }
 
@@ -86,5 +90,71 @@ void main() {
     expect(copy.squares.map((square) => square.id), isNot(contains('start')));
     expect(copy.isPlayable, isTrue);
     expect(find.text('テストコース のコピー'), findsOneWidget);
+  });
+
+  testWidgets('search filters courses by partial name and shows empty state', (
+    tester,
+  ) async {
+    final repository = _MemoryCourseRepository([
+      _createBoard(id: 'alpha', name: 'Alpha Course'),
+      _createBoard(id: 'beta', name: 'Beta Course'),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(home: CourseListScreen(repository: repository)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Alpha Course'), findsOneWidget);
+    expect(find.text('Beta Course'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'alp');
+    await tester.pump();
+
+    expect(find.text('Alpha Course'), findsOneWidget);
+    expect(find.text('Beta Course'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'missing');
+    await tester.pump();
+
+    expect(find.textContaining('一致するコースはありません'), findsOneWidget);
+    expect(find.text('検索をクリア'), findsOneWidget);
+  });
+
+  testWidgets('default sort is newest and can switch to name ascending', (
+    tester,
+  ) async {
+    final repository = _MemoryCourseRepository([
+      _createBoard(
+        id: 'zeta',
+        name: 'Zeta Course',
+        updatedAt: DateTime(2026, 9, 5),
+      ),
+      _createBoard(
+        id: 'alpha',
+        name: 'Alpha Course',
+        updatedAt: DateTime(2026, 9, 1),
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(home: CourseListScreen(repository: repository)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getTopLeft(find.text('Zeta Course')).dy,
+      lessThan(tester.getTopLeft(find.text('Alpha Course')).dy),
+    );
+
+    await tester.tap(find.text('更新が新しい順'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('名前 A→Z').last);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getTopLeft(find.text('Alpha Course')).dy,
+      lessThan(tester.getTopLeft(find.text('Zeta Course')).dy),
+    );
   });
 }
