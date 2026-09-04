@@ -5,7 +5,22 @@ bool effectConditionMatches(
   required int points,
   required Map<String, int> inventory,
 }) {
+  return _effectConditionMatches(
+    condition,
+    points: points,
+    inventory: inventory,
+    depth: 0,
+  );
+}
+
+bool _effectConditionMatches(
+  EffectCondition? condition, {
+  required int points,
+  required Map<String, int> inventory,
+  required int depth,
+}) {
   if (condition == null) return true;
+  if (depth >= 16) return false;
 
   int itemQuantity(String rawName) {
     final name = rawName.trim();
@@ -43,5 +58,27 @@ bool effectConditionMatches(
       final quantity = rawQuantity is num ? rawQuantity.toInt() : 1;
       final threshold = quantity < 1 ? 1 : quantity;
       return rawName is String && itemQuantity(rawName) >= threshold;
+    case EffectConditionType.allOf:
+      final children = condition.childConditions;
+      return children.isNotEmpty &&
+          children.every(
+            (child) => _effectConditionMatches(
+              child,
+              points: points,
+              inventory: inventory,
+              depth: depth + 1,
+            ),
+          );
+    case EffectConditionType.anyOf:
+      final children = condition.childConditions;
+      return children.isNotEmpty &&
+          children.any(
+            (child) => _effectConditionMatches(
+              child,
+              points: points,
+              inventory: inventory,
+              depth: depth + 1,
+            ),
+          );
   }
 }

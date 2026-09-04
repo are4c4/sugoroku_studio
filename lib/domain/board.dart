@@ -9,6 +9,8 @@ enum EffectConditionType {
   hasItem,
   notHasItem,
   itemQuantityAtLeast,
+  allOf,
+  anyOf,
 }
 
 enum RandomEventOutcomeType { showMessage, changePoints, grantItem }
@@ -50,6 +52,19 @@ class EffectCondition {
 
   final EffectConditionType type;
   final Map<String, dynamic> parameters;
+
+  List<EffectCondition> get childConditions {
+    final rawConditions = parameters['conditions'];
+    if (rawConditions is! List) return const <EffectCondition>[];
+    return rawConditions
+        .whereType<Map>()
+        .map(
+          (condition) => EffectCondition.fromJson(
+            Map<String, dynamic>.from(condition),
+          ),
+        )
+        .toList(growable: false);
+  }
 
   Map<String, dynamic> toJson() => {
         'type': type.name,
