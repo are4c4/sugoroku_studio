@@ -65,6 +65,10 @@ String _conditionDescription(EffectCondition? condition, {required int depth}) {
           .map((child) => _conditionDescription(child, depth: depth + 1))
           .map((text) => '($text)')
           .join(' OR ');
+    case EffectConditionType.not:
+      final children = condition.childConditions;
+      if (children.length != 1) return 'NOT条件（未設定）';
+      return 'NOT (${_conditionDescription(children.single, depth: depth + 1)})';
   }
 }
 

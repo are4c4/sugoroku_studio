@@ -80,5 +80,14 @@ bool _effectConditionMatches(
               depth: depth + 1,
             ),
           );
+    case EffectConditionType.not:
+      final children = condition.childConditions;
+      if (children.length != 1) return false;
+      return !_effectConditionMatches(
+        children.single,
+        points: points,
+        inventory: inventory,
+        depth: depth + 1,
+      );
   }
 }

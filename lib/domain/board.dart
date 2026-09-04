@@ -11,6 +11,7 @@ enum EffectConditionType {
   itemQuantityAtLeast,
   allOf,
   anyOf,
+  not,
 }
 
 enum RandomEventOutcomeType { showMessage, changePoints, grantItem }
