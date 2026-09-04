@@ -4,6 +4,7 @@ import '../core/id.dart';
 import '../data/course_repository.dart';
 import '../domain/board.dart';
 import 'course_editor_screen.dart';
+import 'item_definition_editor.dart';
 import 'player_setup_screen.dart';
 
 class CourseListScreen extends StatefulWidget {
@@ -107,6 +108,23 @@ class _CourseListScreenState extends State<CourseListScreen> {
           repository: widget.repository,
           initialBoard: board,
         ),
+      ),
+    );
+    if (!mounted) return;
+    setState(_reload);
+  }
+
+  Future<void> _editItemDefinitions(Board board) async {
+    final definitions = await showItemDefinitionsEditor(
+      context,
+      initialDefinitions: board.itemDefinitions,
+    );
+    if (definitions == null || !mounted) return;
+
+    await widget.repository.saveBoard(
+      board.copyWith(
+        itemDefinitions: definitions,
+        updatedAt: DateTime.now(),
       ),
     );
     if (!mounted) return;
@@ -218,9 +236,7 @@ class _CourseListScreenState extends State<CourseListScreen> {
                     ),
                     title: Text(board.name),
                     subtitle: Text(
-                      board.isPlayable
-                          ? '${board.squares.length}マス・プレイ可能'
-                          : '${board.squares.length}マス・経路を確認してください',
+                      '${board.isPlayable ? '${board.squares.length}マス・プレイ可能' : '${board.squares.length}マス・経路を確認してください'} · 使用アイテム${board.itemDefinitions.length}種',
                     ),
                     onTap: () => _editBoard(board),
                     trailing: Row(
@@ -236,12 +252,17 @@ class _CourseListScreenState extends State<CourseListScreen> {
                         PopupMenuButton<String>(
                           onSelected: (value) {
                             if (value == 'edit') _editBoard(board);
+                            if (value == 'items') _editItemDefinitions(board);
                             if (value == 'delete') _deleteBoard(board);
                           },
                           itemBuilder: (_) => const [
                             PopupMenuItem(
                               value: 'edit',
                               child: Text('編集'),
+                            ),
+                            PopupMenuItem(
+                              value: 'items',
+                              child: Text('使用可能アイテム'),
                             ),
                             PopupMenuItem(
                               value: 'delete',
