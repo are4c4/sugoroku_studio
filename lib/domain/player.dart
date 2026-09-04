@@ -7,6 +7,7 @@ class Player {
     required this.type,
     required this.currentSquareId,
     this.skipTurns = 0,
+    this.points = 0,
     this.routeHistory = const <String>[],
   });
 
@@ -15,6 +16,7 @@ class Player {
   final PlayerType type;
   final String currentSquareId;
   final int skipTurns;
+  final int points;
   final List<String> routeHistory;
 
   Player copyWith({
@@ -22,6 +24,7 @@ class Player {
     PlayerType? type,
     String? currentSquareId,
     int? skipTurns,
+    int? points,
     List<String>? routeHistory,
   }) {
     return Player(
@@ -30,6 +33,7 @@ class Player {
       type: type ?? this.type,
       currentSquareId: currentSquareId ?? this.currentSquareId,
       skipTurns: skipTurns ?? this.skipTurns,
+      points: points ?? this.points,
       routeHistory: routeHistory ?? this.routeHistory,
     );
   }
