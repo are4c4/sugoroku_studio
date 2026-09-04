@@ -66,6 +66,7 @@ Board createStrategyBoard({
 Player cpuPlayer({
   CpuStrategyType strategy = CpuStrategyType.shortestPath,
   int points = 0,
+  Map<String, int> inventory = const <String, int>{},
 }) {
   return Player(
     id: 'cpu',
@@ -74,6 +75,7 @@ Player cpuPlayer({
     currentSquareId: 'fork',
     cpuStrategy: strategy,
     points: points,
+    inventory: inventory,
   );
 }
 
@@ -147,7 +149,7 @@ void main() {
     );
   });
 
-  test('reward strategy evaluates only conditions the player satisfies', () {
+  test('reward strategy evaluates only point conditions the player satisfies', () {
     final board = createStrategyBoard(
       longEffects: const [
         SquareEffect(
@@ -165,6 +167,33 @@ void main() {
 
     expect(choose(strategy, board, cpuPlayer(points: 0)), 'short');
     expect(choose(strategy, board, cpuPlayer(points: 5)), 'long-1');
+  });
+
+  test('reward strategy evaluates item conditions from inventory', () {
+    final board = createStrategyBoard(
+      longEffects: const [
+        SquareEffect(
+          trigger: EffectTrigger.onLand,
+          actionType: EffectActionType.changePoints,
+          parameters: {'points': 10},
+          condition: EffectCondition(
+            type: EffectConditionType.hasItem,
+            parameters: {'itemName': 'Key'},
+          ),
+        ),
+      ],
+    );
+    const strategy = RewardSeekingCpuStrategy();
+
+    expect(choose(strategy, board, cpuPlayer()), 'short');
+    expect(
+      choose(
+        strategy,
+        board,
+        cpuPlayer(inventory: const {'Key': 1}),
+      ),
+      'long-1',
+    );
   });
 
   test('createGame preserves the configured CPU strategy', () {

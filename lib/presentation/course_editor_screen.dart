@@ -25,6 +25,8 @@ enum _ConditionPreset {
   none,
   pointsAtLeast,
   pointsAtMost,
+  hasItem,
+  itemQuantityAtLeast,
 }
 
 class _SquareEditResult {
@@ -277,6 +279,10 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return _ConditionPreset.pointsAtLeast;
       case EffectConditionType.pointsAtMost:
         return _ConditionPreset.pointsAtMost;
+      case EffectConditionType.hasItem:
+        return _ConditionPreset.hasItem;
+      case EffectConditionType.itemQuantityAtLeast:
+        return _ConditionPreset.itemQuantityAtLeast;
     }
   }
 
@@ -286,7 +292,26 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     return rawPoints is num ? rawPoints.toInt() : 0;
   }
 
-  EffectCondition? _conditionFor(_ConditionPreset preset, int points) {
+  String _conditionItemNameFor(EffectCondition? condition) {
+    if (condition == null) return '';
+    final rawName = condition.parameters['itemName'];
+    return rawName is String ? rawName.trim() : '';
+  }
+
+  int _conditionQuantityFor(EffectCondition? condition) {
+    if (condition == null) return 1;
+    final rawQuantity = condition.parameters['quantity'];
+    final quantity = rawQuantity is num ? rawQuantity.toInt() : 1;
+    return quantity < 1 ? 1 : quantity;
+  }
+
+  EffectCondition? _conditionFor(
+    _ConditionPreset preset, {
+    required int points,
+    required String itemName,
+    required int quantity,
+  }) {
+    final safeQuantity = quantity < 1 ? 1 : quantity;
     switch (preset) {
       case _ConditionPreset.none:
         return null;
@@ -300,6 +325,20 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           type: EffectConditionType.pointsAtMost,
           parameters: {'points': points},
         );
+      case _ConditionPreset.hasItem:
+        final name = itemName.trim();
+        if (name.isEmpty) return null;
+        return EffectCondition(
+          type: EffectConditionType.hasItem,
+          parameters: {'itemName': name},
+        );
+      case _ConditionPreset.itemQuantityAtLeast:
+        final name = itemName.trim();
+        if (name.isEmpty) return null;
+        return EffectCondition(
+          type: EffectConditionType.itemQuantityAtLeast,
+          parameters: {'itemName': name, 'quantity': safeQuantity},
+        );
     }
   }
 
@@ -311,6 +350,10 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         return 'ポイントがN以上';
       case _ConditionPreset.pointsAtMost:
         return 'ポイントがN以下';
+      case _ConditionPreset.hasItem:
+        return '指定アイテムを持っている';
+      case _ConditionPreset.itemQuantityAtLeast:
+        return '指定アイテムをN個以上持っている';
     }
   }
 
@@ -489,6 +532,12 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     final conditionPointsController = TextEditingController(
       text: _conditionPointsFor(initialEffect?.condition).toString(),
     );
+    final conditionItemNameController = TextEditingController(
+      text: _conditionItemNameFor(initialEffect?.condition),
+    );
+    final conditionQuantityController = TextEditingController(
+      text: _conditionQuantityFor(initialEffect?.condition).toString(),
+    );
     var warpTargetId = initialEffect == null
         ? (candidates.isEmpty ? null : candidates.first.id)
         : _warpTargetForEffect(initialEffect);
@@ -511,7 +560,14 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
             final needsMessage = preset == _EffectPreset.showMessage;
             final needsItemName = preset == _EffectPreset.grantItem;
             final needsRandomOptions = preset == _EffectPreset.randomEvent;
-            final needsConditionPoints = conditionPreset != _ConditionPreset.none;
+            final needsConditionPoints =
+                conditionPreset == _ConditionPreset.pointsAtLeast ||
+                conditionPreset == _ConditionPreset.pointsAtMost;
+            final needsConditionItemName =
+                conditionPreset == _ConditionPreset.hasItem ||
+                conditionPreset == _ConditionPreset.itemQuantityAtLeast;
+            final needsConditionQuantity =
+                conditionPreset == _ConditionPreset.itemQuantityAtLeast;
             final availablePresets = trigger == EffectTrigger.onPass
                 ? const [_EffectPreset.showMessage]
                 : _EffectPreset.values
@@ -593,6 +649,29 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                           decoration: const InputDecoration(
                             labelText: '条件のポイント値',
                             helperText: '現在ポイントと比較する整数を入力してください',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
+                      if (needsConditionItemName) ...[
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: conditionItemNameController,
+                          decoration: const InputDecoration(
+                            labelText: '条件のアイテム名',
+                            hintText: '例：金の鍵',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
+                      if (needsConditionQuantity) ...[
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: conditionQuantityController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: '必要な個数',
+                            helperText: '1以上の整数を入力してください',
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -682,7 +761,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                           maxLines: 5,
                           decoration: const InputDecoration(
                             labelText: '表示するメッセージ',
-                            hintText: '例：10ポイント以上なのでボーナス！',
+                            hintText: '例：条件を満たしたのでボーナス！',
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -744,13 +823,25 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                                 conditionPointsController.text.trim(),
                               ) ??
                               0;
+                          final conditionQuantity = int.tryParse(
+                                conditionQuantityController.text.trim(),
+                              ) ??
+                              1;
+                          final condition = _conditionFor(
+                            conditionPreset,
+                            points: conditionPoints,
+                            itemName: conditionItemNameController.text,
+                            quantity: conditionQuantity,
+                          );
+                          final requiresItemName =
+                              conditionPreset == _ConditionPreset.hasItem ||
+                              conditionPreset ==
+                                  _ConditionPreset.itemQuantityAtLeast;
+                          if (requiresItemName && condition == null) return;
                           final effect = _effectFor(
                             preset: preset,
                             trigger: trigger,
-                            condition: _conditionFor(
-                              conditionPreset,
-                              conditionPoints,
-                            ),
+                            condition: condition,
                             amount: amount,
                             warpTargetId: warpTargetId,
                             message: messageController.text,
@@ -774,6 +865,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     messageController.dispose();
     itemNameController.dispose();
     conditionPointsController.dispose();
+    conditionItemNameController.dispose();
+    conditionQuantityController.dispose();
     return result;
   }
 

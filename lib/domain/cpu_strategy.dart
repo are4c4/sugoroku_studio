@@ -114,12 +114,27 @@ int _goalDistance(Board board, String squareId) {
 
 bool _conditionMatches(Player player, EffectCondition? condition) {
   if (condition == null) return true;
-  final rawPoints = condition.parameters['points'];
-  final threshold = rawPoints is num ? rawPoints.toInt() : 0;
-  return switch (condition.type) {
-    EffectConditionType.pointsAtLeast => player.points >= threshold,
-    EffectConditionType.pointsAtMost => player.points <= threshold,
-  };
+  switch (condition.type) {
+    case EffectConditionType.pointsAtLeast:
+      final rawPoints = condition.parameters['points'];
+      final threshold = rawPoints is num ? rawPoints.toInt() : 0;
+      return player.points >= threshold;
+    case EffectConditionType.pointsAtMost:
+      final rawPoints = condition.parameters['points'];
+      final threshold = rawPoints is num ? rawPoints.toInt() : 0;
+      return player.points <= threshold;
+    case EffectConditionType.hasItem:
+      final rawName = condition.parameters['itemName'];
+      final itemName = rawName is String ? rawName.trim() : '';
+      return itemName.isNotEmpty && player.itemQuantity(itemName) > 0;
+    case EffectConditionType.itemQuantityAtLeast:
+      final rawName = condition.parameters['itemName'];
+      final itemName = rawName is String ? rawName.trim() : '';
+      final rawQuantity = condition.parameters['quantity'];
+      final quantity = rawQuantity is num ? rawQuantity.toInt() : 1;
+      final threshold = quantity < 1 ? 1 : quantity;
+      return itemName.isNotEmpty && player.itemQuantity(itemName) >= threshold;
+  }
 }
 
 Iterable<SquareEffect> _activeLandingEffects(

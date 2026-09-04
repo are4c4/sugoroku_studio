@@ -2,7 +2,12 @@ enum SquareKind { start, normal, goal }
 
 enum EffectTrigger { onLand, onPass }
 
-enum EffectConditionType { pointsAtLeast, pointsAtMost }
+enum EffectConditionType {
+  pointsAtLeast,
+  pointsAtMost,
+  hasItem,
+  itemQuantityAtLeast,
+}
 
 enum RandomEventOutcomeType { showMessage, changePoints, grantItem }
 
