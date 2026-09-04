@@ -1,5 +1,19 @@
 import '../domain/board.dart';
 
+String triggerDescription(EffectTrigger trigger) {
+  switch (trigger) {
+    case EffectTrigger.onLand:
+      return '止まったとき';
+    case EffectTrigger.onPass:
+      return '通過したとき';
+  }
+}
+
+String effectMessage(SquareEffect effect) {
+  final rawMessage = effect.parameters['message'];
+  return rawMessage is String ? rawMessage.trim() : '';
+}
+
 String effectDescription(SquareEffect effect) {
   switch (effect.actionType) {
     case EffectActionType.moveBy:
@@ -18,6 +32,9 @@ String effectDescription(SquareEffect effect) {
       return 'もう一度振る';
     case EffectActionType.warpTo:
       return 'ワープ';
+    case EffectActionType.showMessage:
+      final message = effectMessage(effect);
+      return message.isEmpty ? 'メッセージを表示' : 'メッセージ「$message」';
   }
 }
 
