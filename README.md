@@ -26,6 +26,9 @@ Issue #1 の v0.1〜v0.5 を基準に、コースを作成し、人間やCPUと�
 - CPUごとのStrategy設定（最短 / 安全重視 / 報酬重視）
 - プレイヤーごとのポイント
 - プレイヤーごとの所持アイテム
+- Boardごとの使用可能アイテム定義
+- 人間プレイヤーによる任意のアイテム使用
+- CPUによる有益なポイントアイテムの自動使用
 - 人間プレイヤーの分岐ルート選択
 - CPU Strategyによる分岐ルート選択
 - 1〜6のサイコロ
@@ -51,8 +54,8 @@ Issue #1 の v0.1〜v0.5 を基準に、コースを作成し、人間やCPUと�
 - 「通過したとき (`onPass`)」Trigger（現在はメッセージAction対応）
 - ポイントがN以上 / N以下 / N〜Mの範囲
 - 指定アイテムを所持 / 未所持 / N個以上所持
-- 複数ConditionのAND / OR
-- AND / OR のネスト
+- 複数ConditionのAND / OR / NOT
+- AND / OR / NOT の再帰ネスト
 - 効果の追加・編集・削除・実行順の並べ替え
 - 複数効果を保存順に実行
 - 効果による移動先の特殊マスを続けて解決
@@ -73,8 +76,11 @@ lib/
 ├─ domain/
 │  ├─ board.dart
 │  ├─ player.dart
+│  ├─ item_definition.dart
+│  ├─ item_use.dart
 │  ├─ effect_condition_evaluator.dart
 │  ├─ cpu_strategy.dart
+│  ├─ cpu_item_use_policy.dart
 │  ├─ game_state.dart
 │  ├─ game_event.dart
 │  └─ game_engine.dart
@@ -82,6 +88,8 @@ lib/
    ├─ course_list_screen.dart
    ├─ course_editor_screen.dart
    ├─ condition_group_editor.dart
+   ├─ item_definition_editor.dart
+   ├─ item_use_dialog.dart
    ├─ player_setup_screen.dart
    ├─ effect_text.dart
    ├─ random_event_editor.dart
@@ -103,19 +111,23 @@ Condition判定は `effect_condition_evaluator.dart` に集約しています。
 
 各Effectには任意の条件を付けられます。ポイントは「N以上」「N以下」「N〜Mの範囲」、アイテムは「指定アイテムを持っている」「持っていない」「N個以上持っている」を利用できます。ポイント範囲は両端を含み、上下限を逆順で保存しても小さい方を下限として判定します。条件を満たさないActionは発火しません。
 
-さらに `allOf` / `anyOf` により、Conditionを再帰的に組み合わせられます。`allOf` はすべての子条件が成立したとき、`anyOf` は1つ以上の子条件が成立したときに成立します。子ConditionはJSONに再帰構造として保存され、ANDの中にORを入れるなどのネストにも対応します。空の複合Conditionは安全側で不成立として扱い、Evaluatorは異常に深いデータによる無限再帰を避けるため16段で打ち切ります。
+さらに `allOf` / `anyOf` / `not` により、Conditionを再帰的に組み合わせられます。`allOf` はすべての子条件、`anyOf` は1つ以上の子条件が成立したときに成立し、`not` は子条件1つの結果を反転します。子ConditionはJSONに再帰構造として保存され、ANDの中にORやNOTを入れるなどのネストにも対応します。空のAND/ORや、子が0件または複数件ある不正なNOTは安全側で不成立として扱い、Evaluatorは異常に深いデータによる無限再帰を避けるため16段で打ち切ります。
 
-`condition_group_editor.dart` は複合Condition専用のUIです。AND / OR グループには2つ以上の子条件を要求し、基本条件や別のAND / ORグループを追加・編集・削除できます。通常の編集UIでは過度に深い構造を避けるためネスト追加を最大4階層程度に制限していますが、保存形式とEvaluatorはより深い既存データも安全に扱います。
+`condition_group_editor.dart` は複合Condition専用のUIです。AND / OR グループには2つ以上、NOTにはちょうど1つの子条件を要求し、基本条件や別のAND / OR / NOTグループを追加・編集・削除できます。通常の編集UIでは過度に深い構造を避けるためネスト追加を最大4階層程度に制限していますが、保存形式とEvaluatorはより深い既存データも安全に扱います。
 
 Actionは保存順に評価されるため、同じマスで先にポイントを増減した結果だけでなく、アイテムの獲得・消費後の残数も後続ActionのConditionから参照できます。たとえば「通行証を1個消費 → 通行証を持っていなければボーナス」のような構成も保存順どおりに判定されます。複合Conditionも各Action評価時点の最新ポイント・inventoryを参照します。条件がない既存データは従来どおり無条件Effectとして読み込まれます。
 
 各 `Player` はランタイム状態として `points` と `inventory` を持ちます。`changePoints` Actionは正数・負数の両方を受け付け、`grantItem` Actionは名前付きアイテムを1個以上付与します。`consumeItem` Actionは指定アイテムを1個以上消費し、必要数を持っていない場合は在庫を変更せず安全なno-opになります。所持数が0になったアイテムはinventoryから除去されます。プレイ画面ではポイントと所持アイテム総数を表示し、付与・消費時にはアイテム名、増減数、残数をバナー表示します。
 
+`Board.itemDefinitions` には、プレイヤーが任意に使えるアイテムの定義を保存します。現在の `ItemDefinition` は名前・説明・使用時のポイント増減を持ち、既存Board JSONに `itemDefinitions` がなくても空リストとして後方互換で読み込めます。人間プレイヤーは通常ターン中に、所持中かつBoardで定義済みのアイテムを1個消費して使用できます。アイテム使用だけでは手番・ターン・サイコロ結果は進みません。
+
+CPUは `cpu_item_use_policy.dart` によってアイテム使用判断を経路Strategyから分離しています。現時点では各ロール開始時に、所持する定義済みアイテムのうちポイント増加量が正で最大のものを1個だけ自動使用します。負のポイントアイテムや未定義アイテムは使わず、休みターン中も使用しません。使用後のpoints / inventoryはそのロール中のCondition判定や分岐RouteSelectorにも反映されます。
+
 `randomEvent` Actionは2つ以上の `RandomEventOption` から1つを等確率で選択します。現在の候補結果はメッセージ表示、ポイント増減、アイテム付与に対応しています。抽選結果は `RandomEventChosen` としてGameEventへ流し、選択されたポイント・アイテム結果も既存の専用GameEventで処理します。移動やワープをランダム候補に含めないことで、最初の実装では再帰的な経路変更を避けています。
 
 プレイ画面の自動ターン処理はCPUだけに限定せず、`skipTurns > 0` のプレイヤーにも適用します。そのため人間プレイヤーも「1回休み」のときにサイコロボタンを押す必要はなく、自動で休みを消化して次のプレイヤーへ進みます。ゴール後は同じBoard・Player設定から状態を再生成して「もう一度」遊ぶか、プレイ画面を終了できます。
 
-特殊マスは `GameEngine` が `SquareEffect` を解決し、移動や効果発動を `GameEvent` として発行します。プレイ画面は `GameEvent` を順番に再生して、サイコロ、駒移動、分岐、特殊マス、メッセージ、ポイント、アイテム、ランダムイベント、ゴールの演出を行います。ゲームルールと演出を分けることで、今後Conditionの追加やアイテム使用UIなどを追加してもルールをUIへ埋め込まずに拡張できます。
+特殊マスは `GameEngine` が `SquareEffect` を解決し、移動や効果発動を `GameEvent` として発行します。プレイ画面は `GameEvent` を順番に再生して、サイコロ、駒移動、分岐、特殊マス、メッセージ、ポイント、アイテム、ランダムイベント、ゴールの演出を行います。ゲームルールと演出を分けることで、今後Conditionやアイテム効果を追加してもルールをUIへ埋め込まずに拡張できます。
 
 ローカル保存は `CourseRepository` を境界にしています。現在の `LocalCourseRepository` は構造化JSONをアプリのドキュメント領域へ保存します。SQLite/Drift等へ移行する場合もUIから永続化実装を切り離せます。
 
@@ -150,4 +162,4 @@ flutter test
 
 設計の基準は [Issue #1](https://github.com/are4c4/sugoroku_studio/issues/1) です。
 
-v0.1 のコース作成・基本プレイ、v0.2 の基本特殊マス、v0.3 のプレイヤー設定・CPU・ローカル複数人・基本アニメーション、v0.4 の分岐コース・ワープ・CPU経路選択まで実装済みです。v0.5 では複数効果、Trigger / Condition / Actionブロック、メッセージAction、`onLand` / `onPass` Trigger、ポイント増減、ポイント範囲条件、アイテム付与、アイテム所持/未所持条件、アイテム消費、AND/OR複合Condition、ランダムイベント、高度なCPU Strategyまで実装しています。次の候補はアイテムの任意使用UI、複合ConditionのNOT、より一般的な変数・比較Conditionです。
+v0.1 のコース作成・基本プレイ、v0.2 の基本特殊マス、v0.3 のプレイヤー設定・CPU・ローカル複数人・基本アニメーション、v0.4 の分岐コース・ワープ・CPU経路選択まで実装済みです。v0.5 では複数効果、Trigger / Condition / Actionブロック、メッセージAction、`onLand` / `onPass` Trigger、ポイント増減、ポイント範囲条件、アイテム付与・消費、アイテム所持条件、AND / OR / NOT複合Condition、ランダムイベント、高度なCPU Strategy、使用可能アイテム定義、人間の任意使用、CPUの安全な自動使用まで実装しています。次の候補は、より一般的な変数・比較Condition、使用可能アイテムの効果種類拡張、Trigger種類の追加です。
