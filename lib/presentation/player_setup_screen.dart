@@ -15,11 +15,9 @@ class PlayerSetupScreen extends StatefulWidget {
 }
 
 class _PlayerDraft {
-  _PlayerDraft({
-    required String name,
-    required this.type,
-    this.cpuStrategy = CpuStrategyType.shortestPath,
-  }) : controller = TextEditingController(text: name);
+  _PlayerDraft({required String name, required this.type})
+      : controller = TextEditingController(text: name),
+        cpuStrategy = CpuStrategyType.shortestPath;
 
   final TextEditingController controller;
   PlayerType type;
