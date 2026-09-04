@@ -83,6 +83,10 @@ String effectDescription(SquareEffect effect) {
       final itemName = effectItemName(effect);
       final quantity = effectItemQuantity(effect);
       return itemName.isEmpty ? 'アイテムを付与' : '「$itemName」×$quantity を獲得';
+    case EffectActionType.consumeItem:
+      final itemName = effectItemName(effect);
+      final quantity = effectItemQuantity(effect);
+      return itemName.isEmpty ? 'アイテムを消費' : '「$itemName」×$quantity を消費';
     case EffectActionType.randomEvent:
       final count = effect.randomEventOptions.length;
       return count == 0 ? 'ランダムイベント' : 'ランダムイベント（$count候補）';
