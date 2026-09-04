@@ -33,6 +33,7 @@ enum _ConditionPreset {
   itemQuantityAtLeast,
   allOf,
   anyOf,
+  not,
 }
 
 class _SquareEditResult {
@@ -288,6 +289,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         _ConditionPreset.itemQuantityAtLeast,
       EffectConditionType.allOf => _ConditionPreset.allOf,
       EffectConditionType.anyOf => _ConditionPreset.anyOf,
+      EffectConditionType.not => _ConditionPreset.not,
     };
   }
 
@@ -370,6 +372,14 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           type: EffectConditionType.itemQuantityAtLeast,
           parameters: {'itemName': name, 'quantity': safeQuantity},
         );
+      case _ConditionPreset.not:
+        if (groupConditions.length != 1) return null;
+        return EffectCondition(
+          type: EffectConditionType.not,
+          parameters: {
+            'conditions': groupConditions.map((item) => item.toJson()).toList(),
+          },
+        );
       case _ConditionPreset.allOf:
       case _ConditionPreset.anyOf:
         if (groupConditions.length < 2) return null;
@@ -397,6 +407,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         '指定アイテムをN個以上持っている',
       _ConditionPreset.allOf => 'すべて満たす（AND）',
       _ConditionPreset.anyOf => 'いずれか満たす（OR）',
+      _ConditionPreset.not => '満たさない（NOT）',
     };
   }
 
@@ -608,7 +619,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
               preset == _EffectPreset.consumeItem;
           final needsRandomOptions = preset == _EffectPreset.randomEvent;
           final needsConditionGroup = conditionPreset == _ConditionPreset.allOf ||
-              conditionPreset == _ConditionPreset.anyOf;
+              conditionPreset == _ConditionPreset.anyOf ||
+              conditionPreset == _ConditionPreset.not;
           final needsConditionPoints = !needsConditionGroup &&
               (conditionPreset == _ConditionPreset.pointsAtLeast ||
                   conditionPreset == _ConditionPreset.pointsAtMost ||
@@ -635,6 +647,23 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
               return '個数';
             }
             return 'マス数';
+          }
+
+          EffectConditionType selectedGroupType() {
+            return switch (conditionPreset) {
+              _ConditionPreset.allOf => EffectConditionType.allOf,
+              _ConditionPreset.anyOf => EffectConditionType.anyOf,
+              _ConditionPreset.not => EffectConditionType.not,
+              _ => EffectConditionType.allOf,
+            };
+          }
+
+          bool invalidGroupCount() {
+            if (!needsConditionGroup) return false;
+            if (conditionPreset == _ConditionPreset.not) {
+              return groupConditions.length != 1;
+            }
+            return groupConditions.length < 2;
           }
 
           return AlertDialog(
@@ -694,12 +723,9 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                       const SizedBox(height: 14),
                       OutlinedButton.icon(
                         onPressed: () async {
-                          final groupType = conditionPreset == _ConditionPreset.allOf
-                              ? EffectConditionType.allOf
-                              : EffectConditionType.anyOf;
                           final edited = await showConditionGroupEditor(
                             context,
-                            groupType: groupType,
+                            groupType: selectedGroupType(),
                             initialConditions: groupConditions,
                           );
                           if (edited != null && context.mounted) {
@@ -715,13 +741,13 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          groupConditions.length < 2
-                              ? '2つ以上の子条件を設定してください。'
+                          invalidGroupCount()
+                              ? conditionPreset == _ConditionPreset.not
+                                  ? 'NOTには子条件を1つ設定してください。'
+                                  : '2つ以上の子条件を設定してください。'
                               : conditionDescription(
                                   EffectCondition(
-                                    type: conditionPreset == _ConditionPreset.allOf
-                                        ? EffectConditionType.allOf
-                                        : EffectConditionType.anyOf,
+                                    type: selectedGroupType(),
                                     parameters: {
                                       'conditions': groupConditions
                                           .map((item) => item.toJson())
@@ -923,7 +949,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
               ),
               FilledButton(
                 onPressed: needsRandomOptions && randomOptions.length < 2 ||
-                        needsConditionGroup && groupConditions.length < 2
+                        invalidGroupCount()
                     ? null
                     : () {
                         final amount = int.tryParse(amountController.text.trim()) ?? 1;
