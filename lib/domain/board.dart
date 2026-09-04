@@ -2,6 +2,8 @@ enum SquareKind { start, normal, goal }
 
 enum EffectTrigger { onLand, onPass }
 
+enum EffectConditionType { pointsAtLeast, pointsAtMost }
+
 enum EffectActionType {
   moveBy,
   moveToStart,
@@ -28,24 +30,54 @@ class BoardPosition {
   }
 }
 
+class EffectCondition {
+  const EffectCondition({
+    required this.type,
+    this.parameters = const <String, dynamic>{},
+  });
+
+  final EffectConditionType type;
+  final Map<String, dynamic> parameters;
+
+  Map<String, dynamic> toJson() => {
+        'type': type.name,
+        'parameters': parameters,
+      };
+
+  factory EffectCondition.fromJson(Map<String, dynamic> json) {
+    return EffectCondition(
+      type: EffectConditionType.values.byName(
+        json['type'] as String? ?? EffectConditionType.pointsAtLeast.name,
+      ),
+      parameters: Map<String, dynamic>.from(
+        json['parameters'] as Map? ?? const <String, dynamic>{},
+      ),
+    );
+  }
+}
+
 class SquareEffect {
   const SquareEffect({
     required this.trigger,
     required this.actionType,
     this.parameters = const <String, dynamic>{},
+    this.condition,
   });
 
   final EffectTrigger trigger;
   final EffectActionType actionType;
   final Map<String, dynamic> parameters;
+  final EffectCondition? condition;
 
   Map<String, dynamic> toJson() => {
         'trigger': trigger.name,
         'actionType': actionType.name,
         'parameters': parameters,
+        if (condition != null) 'condition': condition!.toJson(),
       };
 
   factory SquareEffect.fromJson(Map<String, dynamic> json) {
+    final rawCondition = json['condition'];
     return SquareEffect(
       trigger: EffectTrigger.values.byName(
         json['trigger'] as String? ?? EffectTrigger.onLand.name,
@@ -56,6 +88,9 @@ class SquareEffect {
       parameters: Map<String, dynamic>.from(
         json['parameters'] as Map? ?? const <String, dynamic>{},
       ),
+      condition: rawCondition is Map
+          ? EffectCondition.fromJson(Map<String, dynamic>.from(rawCondition))
+          : null,
     );
   }
 }
