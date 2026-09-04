@@ -149,7 +149,9 @@ int _cautiousSquareScore(
         score -= 120;
       case EffectActionType.skipTurn:
         final rawTurns = effect.parameters['turns'];
-        final turns = rawTurns is num ? rawTurns.toInt().clamp(1, 20) : 1;
+        final turns = rawTurns is num
+            ? rawTurns.toInt().clamp(1, 20).toInt()
+            : 1;
         score -= turns * 20;
       case EffectActionType.rollAgain:
         score += 4;
@@ -158,7 +160,7 @@ int _cautiousSquareScore(
         if (target is String) {
           final currentDistance = _goalDistance(board, square.id);
           final targetDistance = _goalDistance(board, target);
-          score += (currentDistance - targetDistance).clamp(-20, 20);
+          score += (currentDistance - targetDistance).clamp(-20, 20).toInt();
         }
       case EffectActionType.showMessage:
         break;
@@ -168,7 +170,9 @@ int _cautiousSquareScore(
         if (points < 0) score += points * 3;
       case EffectActionType.grantItem:
         final rawQuantity = effect.parameters['quantity'];
-        final quantity = rawQuantity is num ? rawQuantity.toInt().clamp(1, 20) : 1;
+        final quantity = rawQuantity is num
+            ? rawQuantity.toInt().clamp(1, 20).toInt()
+            : 1;
         score += quantity;
       case EffectActionType.randomEvent:
         final outcomes = effect.randomEventOptions;
@@ -210,7 +214,9 @@ int _rewardSquareScore(Player player, BoardSquare square) {
         score -= 25;
       case EffectActionType.skipTurn:
         final rawTurns = effect.parameters['turns'];
-        final turns = rawTurns is num ? rawTurns.toInt().clamp(1, 20) : 1;
+        final turns = rawTurns is num
+            ? rawTurns.toInt().clamp(1, 20).toInt()
+            : 1;
         score -= turns * 6;
       case EffectActionType.rollAgain:
         score += 6;
@@ -224,7 +230,9 @@ int _rewardSquareScore(Player player, BoardSquare square) {
         score += points * 4;
       case EffectActionType.grantItem:
         final rawQuantity = effect.parameters['quantity'];
-        final quantity = rawQuantity is num ? rawQuantity.toInt().clamp(1, 20) : 1;
+        final quantity = rawQuantity is num
+            ? rawQuantity.toInt().clamp(1, 20).toInt()
+            : 1;
         score += quantity * 10;
       case EffectActionType.randomEvent:
         final outcomes = effect.randomEventOptions;
@@ -250,7 +258,9 @@ int _rewardRandomOutcomeScore(RandomEventOption option) {
       return points * 4;
     case RandomEventOutcomeType.grantItem:
       final rawQuantity = option.parameters['quantity'];
-      final quantity = rawQuantity is num ? rawQuantity.toInt().clamp(1, 20) : 1;
+      final quantity = rawQuantity is num
+          ? rawQuantity.toInt().clamp(1, 20).toInt()
+          : 1;
       return quantity * 10;
   }
 }
