@@ -9,6 +9,7 @@ enum EffectActionType {
   rollAgain,
   warpTo,
   showMessage,
+  changePoints,
 }
 
 class BoardPosition {
